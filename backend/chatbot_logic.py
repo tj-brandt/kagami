@@ -11,7 +11,6 @@ from empath import Empath
 from nltk.tokenize import word_tokenize
 
 # --- Constants ---
-AVATAR_IMAGE_PATH = "franko.png"
 DEFAULT_BOT_NAME = "SoraSync"
 NO_AVATAR_BOT_NAME = "ShopBot"
 GEMINI_MODEL_NAME = "gemini-2.0-flash-thinking-exp-01-21"
@@ -19,7 +18,7 @@ SESSION_TIMEOUT_SECONDS = 600
 LOG_DIR = "experiment_logs"
 MIN_LSM_TOKENS = 15
 LSM_SMOOTHING_ALPHA = 0.4
-
+genai.configure(api_key=os.getenv("REMOVED"))
 # --- Regex Patterns & Function Word Sets ---
 INFORMAL_RE = re.compile(
     r"\b(sup|bruh|yo|dude|frank[iy]+|lol|lmao|deadass|ain't|gonna|wanna|gotta|"

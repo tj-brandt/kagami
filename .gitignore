@@ -11,3 +11,6 @@ build/
 
 # OS junk
 .DS_Store
+
+#logs
+experiment_logs/
