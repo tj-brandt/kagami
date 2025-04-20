@@ -7,3 +7,4 @@ nltk                # For tokenization, VADER
 textstat            # For readability scores
 emoji               # For emoji detection/removal
 empath              # For psychological categories
+openai
