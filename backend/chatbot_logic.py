@@ -18,7 +18,6 @@ SESSION_TIMEOUT_SECONDS = 600
 LOG_DIR = "experiment_logs"
 MIN_LSM_TOKENS = 15
 LSM_SMOOTHING_ALPHA = 0.4
-genai.configure(api_key=os.getenv("REMOVED"))
 # --- Regex Patterns & Function Word Sets ---
 INFORMAL_RE = re.compile(
     r"\b(sup|bruh|yo|dude|frank[iy]+|lol|lmao|deadass|ain't|gonna|wanna|gotta|"
@@ -249,8 +248,21 @@ def log_event(event_data: dict, session_info: dict):
     event_data["participant_id"] = session_info.get("participantId")
     event_data["session_id"] = session_info.get("sessionId")
     event_data["condition"] = session_info.get("condition")
+    event_data["avatar_url"] = session_info.get("avatar_url")
     event_data["turn_number"] = session_info.get("turn_number")
     os.makedirs(os.path.dirname(log_file), exist_ok=True)
     with open(log_file, 'a', encoding='utf-8') as f:
         json.dump(event_data, f, ensure_ascii=False)
         f.write('\n')
+
+def log_avatar(participant_id: str, avatar_url: str, prompt: str):
+    avatar_log_path = os.path.join(LOG_DIR, "avatar_log.jsonl")
+    os.makedirs(LOG_DIR, exist_ok=True)
+    with open(avatar_log_path, "a", encoding="utf-8") as f:
+        json.dump({
+            "participant_id": participant_id,
+            "avatar_url": avatar_url,
+            "avatar_prompt": prompt,
+            "timestamp_utc": datetime.now(timezone.utc).isoformat()
+        }, f)
+        f.write("\n")

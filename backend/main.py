@@ -7,6 +7,8 @@ import random
 import time
 import openai
 
+from openai import OpenAI
+
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -26,15 +28,18 @@ try:
         compute_lsm_score,
         post_process_response,
         log_event,
+        log_avatar, # <<< Moved import here (Fix 1)
         MIN_LSM_TOKENS,
         LSM_SMOOTHING_ALPHA,
         LOG_DIR,
-        AVATAR_IMAGE_PATH,
         DEFAULT_BOT_NAME,
         NO_AVATAR_BOT_NAME
     )
 except ImportError as e:
     print(f"Error importing chatbot_logic: {e}")
+    # Handle the error appropriately, maybe exit or raise
+    raise SystemExit(f"Failed to import chatbot_logic: {e}")
+
 
 # --- Configure OpenAI API key from env ---
 openai.api_key = os.getenv("OPENAI_API_KEY")
@@ -46,7 +51,7 @@ app = FastAPI()
 
 app.add_middleware(
    CORSMiddleware,
-   allow_origins=["http://localhost:3000"],
+   allow_origins=["http://localhost:3000"], # Adjust for your frontend URL in production
    allow_methods=["*"],
    allow_headers=["*"],
    allow_credentials=True,
@@ -58,6 +63,8 @@ _sessions: Dict[str, Dict[str, Any]] = {}
 # --- Pydantic models for your existing endpoints ---
 class SessionStartRequest(BaseModel):
     participantId: str
+    avatarUrl: Optional[str] = None
+    avatarPrompt: Optional[str] = None
 
 class SessionStartResponse(BaseModel):
     sessionId: str
@@ -67,6 +74,7 @@ class SessionStartResponse(BaseModel):
 class MessageRequest(BaseModel):
     sessionId: str
     message: str
+    # Removed avatarUrl here as it's not needed per request, use session state instead
 
 class MessageResponse(BaseModel):
     response: str
@@ -80,14 +88,13 @@ class AvatarRequest(BaseModel):
 
 # --- Endpoint: start session ---
 @app.post("/api/session/start", response_model=SessionStartResponse)
-async def start_session(req: SessionStartRequest): # Made async because get_gemini_response is async
+async def start_session(req: SessionStartRequest):
     pid = req.participantId.zfill(2) # Pad ID if needed for logging
     sid = str(uuid.uuid4()) # Use full UUID string
 
     # Randomize condition (avatar & LSM) - this logic should be here
-    avatar  = random.choice([True, False])
-    lsm     = random.choice([True, False])
-    condition = {"avatar": avatar, "lsm": lsm}
+    lsm = random.choice([True, False])
+    condition = {"lsm": lsm}
 
     # Prepare log file path and initial session data structure
     timestamp_str = time.strftime("%Y%m%d_%H%M%S", time.gmtime()) # UTC time
@@ -99,24 +106,38 @@ async def start_session(req: SessionStartRequest): # Made async because get_gemi
         "sessionId": sid,
         "condition": condition,
         "log_file_path": log_file_path,
-        "turn_number": 0, # Initialize turn number
-        "smoothed_lsm_score": 0.5, # Initialize smoothed LSM
-        "history": [] # Initialize history
+        "turn_number": 0,
+        "smoothed_lsm_score": 0.5,
+        "history": [],
+        "avatar_url": req.avatarUrl,
+        "avatar_prompt": req.avatarPrompt
     }
+
+    # <<< Moved this block inside the function (Fix 1)
+    # Log avatar details if provided
+    if req.avatarUrl and req.avatarPrompt:
+        try:
+            log_avatar(pid, req.avatarUrl, req.avatarPrompt)
+        except Exception as e:
+            print(f"Warning: Failed to log avatar for session {sid}, participant {pid}: {e}")
+            # Log this failure? Decide if this is critical enough to log via log_event
 
     # --- Generate and Log Initial Greeting (Turn 0) ---
     # Use the logic function to get the initial greeting
     # No user prompt, empty history for the first call
     # Pass session_info to LLM function for potential internal logging/context
     initial_style_profile = {} # No user input yet
+    session = _sessions[sid] # Get the session data we just created
+
     try:
         initial_greeting_raw, system_instr = await get_gemini_response(
             user_prompt="<System Initialized>", # Internal marker for LLM context if needed
             chat_history=[],
             is_adaptive=condition['lsm'],
-            show_avatar=condition['avatar'],
+            # Use session state here, which was just populated from req
+            show_avatar=bool(session.get("avatar_url")),
             style_profile=initial_style_profile # Empty profile for turn 0
-            # Add session_info= _sessions[sid] here if your get_gemini_response accepts it for logging
+            # Add session_info=session here if your get_gemini_response accepts it for logging
         )
         # Post-process the raw greeting based on the assigned condition
         initial_greeting_processed = post_process_response(initial_greeting_raw, condition['lsm'])
@@ -127,29 +148,30 @@ async def start_session(req: SessionStartRequest): # Made async because get_gemi
 
 
     # Add initial greeting to session history
-    _sessions[sid]["history"].append({
+    session["history"].append({
         "role": "assistant",
         "content": initial_greeting_processed,
         "turn_number": 0,
-        "small_avatar_used": AVATAR_IMAGE_PATH if condition['avatar'] else None # Store avatar identifier
-        # You could store more metadata here if needed, but keep it minimal for history passed to LLM
+        "avatar_url": session.get("avatar_url")
     })
 
     # Log session start event (after history is initialized with greeting)
-    # Pass the current state of _sessions[sid] to log_event
+    # Pass the current state of session to log_event
     log_event({
         "event_type": "session_start",
         "initial_condition": condition,
         "initial_greeting": initial_greeting_processed,
-        "system_instruction_initial": system_instr # Log the prompt used for greeting
-    }, session_info=_sessions[sid])
+        "system_instruction_initial": system_instr,
+        "avatar_url": session.get("avatar_url"),
+        "avatar_prompt": session.get("avatar_prompt")
+    }, session_info=session)
 
 
     # Return session details and the initial message(s) to the frontend
     return SessionStartResponse(
         sessionId=sid,
         condition=condition,
-        initialHistory=_sessions[sid]["history"] # Return the history, which contains the first message
+        initialHistory=session["history"] # Return the history, which contains the first message
     )
 
 
@@ -181,9 +203,19 @@ async def handle_message(req: MessageRequest): # Needs to be async because get_g
     # 2. Add PREVIOUS smoothed LSM score to the profile for prompt generation
     traits["lsm_score_prev"] = session["smoothed_lsm_score"]
 
+    # --- Add User Message to History (BEFORE calling LLM) ---
+    # It's important the LLM sees the user's message in the history context
+    session["history"].append({
+        "role": "user",
+        "content": user_text,
+        "turn_number": current_turn,
+        # User messages don't typically have an avatar displayed in the same way,
+        # but you could include user info if needed later
+        # "avatar_url": None # Or user avatar if you implement that
+    })
 
     # --- Logging User Message ---
-    # 3. Log user message event
+    # 3. Log user message event (log *after* adding to history if history affects logging)
     log_event({
         "event_type": "user_message",
         # turn_number is added by log_event using session info
@@ -191,26 +223,17 @@ async def handle_message(req: MessageRequest): # Needs to be async because get_g
         "style_profile": traits # Log the full detected profile (includes prev smoothed LSM)
     }, session_info=session)
 
-    # Add user message to session history *before* calling the LLM for context
-    session["history"].append({
-        "role": "user",
-        "content": user_text,
-        "turn_number": current_turn
-        # Could add user avatar here if you had one
-    })
-
-
     # --- Generating Bot Response ---
     # 4. Generate Bot Response using ported get_gemini_response
     # Pass the session history *including* the current user message now added
     try:
         # get_gemini_response returns raw text and system instruction used
         bot_response_raw, system_instr_used = await get_gemini_response(
-            user_prompt=user_text, # This might be redundant if chat_history includes it,
-                                   # but good practice to pass the explicit query.
+            user_prompt=user_text, # Pass current prompt explicitly
             chat_history=session["history"], # Pass the full history including the user's latest message
             is_adaptive=condition["lsm"],
-            show_avatar=condition["avatar"],
+            # <<< Use session state for avatar info (Fix 2)
+            show_avatar=bool(session.get("avatar_url")),
             style_profile=traits # Pass the profile containing prev smoothed LSM
             # Add session_info=session here if your get_gemini_response accepts it for logging
         )
@@ -234,6 +257,9 @@ async def handle_message(req: MessageRequest): # Needs to be async because get_g
          }, session_info=session)
 
          # Return the error response immediately
+         # Note: The user message *was* added to history, but the bot response is an error.
+         # Consider if you need to add the error response to history as well.
+         # For now, following original logic: don't add error response to history.
          return MessageResponse(
              response=processed_bot_response,
              styleProfile=traits, # Return the user traits detected
@@ -246,9 +272,7 @@ async def handle_message(req: MessageRequest): # Needs to be async because get_g
     # This section only runs if the try block above succeeded without an exception
     # 5. Post-process the raw response
     processed_bot_response = post_process_response(bot_response_raw, condition["lsm"])
-    # Need bot token count for LSM smoothing check. Use a simple split or re-call tokenize_text.
-    # Re-calling detect_style_traits might be safer if it includes markdown cleaning etc.
-    # Or just use a simple split for token count check:
+    # Need bot token count for LSM smoothing check.
     bot_traits      = detect_style_traits(processed_bot_response)
     bot_token_count = bot_traits.get("word_count", 0)
 
@@ -280,17 +304,16 @@ async def handle_message(req: MessageRequest): # Needs to be async because get_g
 
 
     # --- Adding Bot Message to History and Logging ---
-    # 7. Add bot message to session history
+    # 7. Add bot message to session history (AFTER generating and processing it)
     session["history"].append({
-         "role": "assistant",
-         "content": processed_bot_response,
-         "turn_number": current_turn, # Turn number for this pair
-         "small_avatar_used": AVATAR_IMAGE_PATH if condition['avatar'] else None # Store avatar identifier
-         # Could store raw_lsm, smoothed_lsm_after_turn, system_instruction_used here too if needed in history for display/debug
+        "role": "assistant",
+        "content": processed_bot_response,
+        "turn_number": current_turn,
+        "avatar_url": session.get("avatar_url")
     })
 
 
-    # 8. Log bot response event
+    # 8. Log bot response event (log *after* adding to history if history affects logging)
     log_event({
         "event_type": "bot_response",
         "user_prompt": user_text, # Log the prompt it responded to
@@ -314,22 +337,55 @@ async def handle_message(req: MessageRequest): # Needs to be async because get_g
         smoothedLsmAfterTurn=new_smoothed_lsm # Smoothed LSM *after* this turn (used for *next* turn's prompt)
     )
 
-# Add any other endpoints like session end/timeout redirection here
+# --- Endpoint: generate avatar ---
 @app.post("/api/avatar/generate")
 async def generate_avatar(req: AvatarRequest):
     if not openai.api_key:
-        raise HTTPException(500, detail="OpenAI API key not configured on server.")
+        print("Error: OpenAI API key not configured.")
+        raise HTTPException(500, detail="Avatar generation service is not configured on the server.")
+
     try:
-        # Call OpenAI Image API for 1024×1024
-        resp = openai.Image.create(
-            prompt=req.prompt,
-            n=1,
-            size="1024x1024",
-            model="dall-e-3"
+        # ✅ Correctly instantiate the client
+        client = OpenAI(api_key=openai.api_key)
+
+        base_prompt = (
+            "3D rendered Animal Crossing-style character sitting behind a desk, "
+            "transparent background, clean lighting. "
         )
-        url = resp["data"][0]["url"]
+        full_prompt = base_prompt + req.prompt.strip()
+
+        # ✅ This is a synchronous method (NO await)
+        response = client.images.generate(
+            model="dall-e-3",
+            prompt=full_prompt,
+            size="1024x1024",
+            quality="standard",
+            n=1,
+        )
+
+        url = response.data[0].url
+        print(f"Generated avatar URL: {url}")
         return {"url": url}
 
-    except openai.error.OpenAIError as e:
-        # Bubble up any API errors
-        raise HTTPException(502, detail=f"OpenAI API error: {e}")
+    except Exception as e:
+        print(f"Avatar generation error: {e}")
+        raise HTTPException(500, detail=f"Internal server error during avatar generation: {e}")
+
+
+
+# Add any other endpoints like session end/timeout redirection here
+# Example: Basic session cleanup (optional, depends on requirements)
+# @app.post("/api/session/end")
+# async def end_session(req: MessageRequest): # Reuse or create new model
+#     sid = req.sessionId
+#     session = _sessions.pop(sid, None) # Remove session if exists
+#     if session:
+#         log_event({"event_type": "session_end"}, session_info=session)
+#         return {"message": "Session ended successfully."}
+#     else:
+#         raise HTTPException(status_code=404, detail="Session not found.")
+
+# Optional: Add root endpoint for health check
+@app.get("/")
+async def read_root():
+    return {"message": "Shopping Chatbot Backend is running."}
