@@ -8,7 +8,7 @@ import axios from 'axios';
 import ConditionSelector from './components/ConditionSelector.jsx';
 
 // Define your backend API URL
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
 
 function App() {
   const [phase, setPhase] = useState('select'); // Start with condition selection
