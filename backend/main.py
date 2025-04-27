@@ -5,9 +5,10 @@ import os
 import uuid
 import random
 import time
-import openai
+import vertexai
+from vertexai.preview.vision_models import ImageGenerationModel
+import base64
 
-from openai import OpenAI
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -16,6 +17,13 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Dict, List, Any, Optional
+
+# --- NEW: Import Google Cloud Vertex AI libraries ---
+import google.cloud.aiplatform as aiplatform
+# Use the specific GenerativeModel import path if needed, or rely on the preview version
+# from google.cloud.aiplatform.preview.generative_models import GenerativeModel
+from vertexai.preview.generative_models import GenerativeModel # Using preview as in the example
+import base64 # Needed for base64 encoding the image bytes
 
 # ensure our local nltk_data/ is populated before anything else tries VADER
 import download_nltk_data   # runs its checks/downloads into ./nltk_data
@@ -28,7 +36,7 @@ try:
         compute_lsm_score,
         post_process_response,
         log_event,
-        log_avatar, # <<< Moved import here (Fix 1)
+        log_avatar,
         MIN_LSM_TOKENS,
         LSM_SMOOTHING_ALPHA,
         LOG_DIR,
@@ -37,14 +45,47 @@ try:
     )
 except ImportError as e:
     print(f"Error importing chatbot_logic: {e}")
-    # Handle the error appropriately, maybe exit or raise
     raise SystemExit(f"Failed to import chatbot_logic: {e}")
 
 
-# --- Configure OpenAI API key from env ---
-openai.api_key = os.getenv("OPENAI_API_KEY")
-if not openai.api_key:
-    print("WARNING: OPENAI_API_KEY is not set. Avatar generation will fail.")
+# --- Configure Image Generation API (Google Cloud Vertex AI/Imagen) ---
+# REMOVE OpenAI configuration
+# openai.api_key = os.getenv("OPENAI_API_KEY")
+# if not openai.api_key:
+#     print("WARNING: OPENAI_API_KEY is not set. Avatar generation will fail.") # REMOVE or update this warning
+
+GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT")
+GOOGLE_CLOUD_LOCATION = os.getenv("GOOGLE_CLOUD_LOCATION", "us-central1") # Default to us-central1
+# Use the full resource ID for the Imagen model as required
+IMAGEN_MODEL_NAME = os.getenv("IMAGEN_MODEL_NAME", "projects/gen-lang-client-0959618046/locations/us-central1/publishers/google/models/imagen-3.0-generate-002")
+
+_aiplatform_initialized = False
+
+def initialize_aiplatform():
+    """Initializes Google Cloud Vertex AI if not already initialized."""
+    global _aiplatform_initialized
+    if not _aiplatform_initialized:
+        if not GOOGLE_CLOUD_PROJECT:
+            print("WARNING: GOOGLE_CLOUD_PROJECT is not set. Imagen generation will fail.")
+            return False # Indicate failure
+
+        try:
+            # Set up Vertex AI project and location
+            aiplatform.init(project=GOOGLE_CLOUD_PROJECT, location=GOOGLE_CLOUD_LOCATION)
+            _aiplatform_initialized = True
+            print(f"Vertex AI initialized for project '{GOOGLE_CLOUD_PROJECT}' in region '{GOOGLE_CLOUD_LOCATION}'")
+            # Add a check/warning if GOOGLE_APPLICATION_CREDENTIALS isn't set in env
+            if not os.getenv("GOOGLE_APPLICATION_CREDENTIALS"):
+                 print("INFO: GOOGLE_APPLICATION_CREDENTIALS environment variable is not set.")
+                 print("INFO: Imagen generation requires authentication. Using gcloud defaults or service account from env is recommended.")
+
+            return True # Indicate success
+        except Exception as e:
+            print(f"Error initializing Vertex AI: {e}")
+            print("Please ensure your Google Cloud credentials are set up correctly.")
+            return False # Indicate failure
+    return True # Already initialized
+
 
 # --- FastAPI setup ---
 app = FastAPI()
@@ -62,9 +103,11 @@ _sessions: Dict[str, Dict[str, Any]] = {}
 
 # --- Pydantic models for your existing endpoints ---
 class SessionStartRequest(BaseModel):
-    participantId: str
+    participantId: Optional[str] = None  # Optional now
     avatarUrl: Optional[str] = None
     avatarPrompt: Optional[str] = None
+    condition: Optional[Dict[str, Any]] = None
+
 
 class SessionStartResponse(BaseModel):
     sessionId: str
@@ -84,17 +127,19 @@ class MessageResponse(BaseModel):
 
 # --- NEW: Avatar generation request model ---
 class AvatarRequest(BaseModel):
-    prompt: str
+    prompt: str # The user-specific part of the prompt (e.g., "dog with sunglasses")
 
 # --- Endpoint: start session ---
 @app.post("/api/session/start", response_model=SessionStartResponse)
 async def start_session(req: SessionStartRequest):
-    pid = req.participantId.zfill(2) # Pad ID if needed for logging
+    pid = req.participantId.zfill(2) if req.participantId else "00" # Pad ID if needed for logging
     sid = str(uuid.uuid4()) # Use full UUID string
 
     # Randomize condition (avatar & LSM) - this logic should be here
-    lsm = random.choice([True, False])
-    condition = {"lsm": lsm}
+    condition = req.condition or {
+    "lsm": random.choice([True, False]),
+    "avatar": random.choice([True, False])
+    }
 
     # Prepare log file path and initial session data structure
     timestamp_str = time.strftime("%Y%m%d_%H%M%S", time.gmtime()) # UTC time
@@ -113,14 +158,15 @@ async def start_session(req: SessionStartRequest):
         "avatar_prompt": req.avatarPrompt
     }
 
-    # <<< Moved this block inside the function (Fix 1)
     # Log avatar details if provided
+    # This happens *after* session state is created with avatar_url/prompt
     if req.avatarUrl and req.avatarPrompt:
         try:
+            # Log the avatar URL and prompt used for this participant
             log_avatar(pid, req.avatarUrl, req.avatarPrompt)
         except Exception as e:
             print(f"Warning: Failed to log avatar for session {sid}, participant {pid}: {e}")
-            # Log this failure? Decide if this is critical enough to log via log_event
+
 
     # --- Generate and Log Initial Greeting (Turn 0) ---
     # Use the logic function to get the initial greeting
@@ -152,7 +198,7 @@ async def start_session(req: SessionStartRequest):
         "role": "assistant",
         "content": initial_greeting_processed,
         "turn_number": 0,
-        "avatar_url": session.get("avatar_url")
+        "avatar_url": session.get("avatar_url") # Include avatar_url in history entry
     })
 
     # Log session start event (after history is initialized with greeting)
@@ -232,8 +278,7 @@ async def handle_message(req: MessageRequest): # Needs to be async because get_g
             user_prompt=user_text, # Pass current prompt explicitly
             chat_history=session["history"], # Pass the full history including the user's latest message
             is_adaptive=condition["lsm"],
-            # <<< Use session state for avatar info (Fix 2)
-            show_avatar=bool(session.get("avatar_url")),
+            show_avatar=bool(session.get("avatar_url")), # Use session state for avatar info
             style_profile=traits # Pass the profile containing prev smoothed LSM
             # Add session_info=session here if your get_gemini_response accepts it for logging
         )
@@ -309,7 +354,7 @@ async def handle_message(req: MessageRequest): # Needs to be async because get_g
         "role": "assistant",
         "content": processed_bot_response,
         "turn_number": current_turn,
-        "avatar_url": session.get("avatar_url")
+        "avatar_url": session.get("avatar_url") # Include avatar_url in history entry
     })
 
 
@@ -340,37 +385,47 @@ async def handle_message(req: MessageRequest): # Needs to be async because get_g
 # --- Endpoint: generate avatar ---
 @app.post("/api/avatar/generate")
 async def generate_avatar(req: AvatarRequest):
-    if not openai.api_key:
-        print("Error: OpenAI API key not configured.")
-        raise HTTPException(500, detail="Avatar generation service is not configured on the server.")
+    """Generates an avatar image using Vertex AI Imagen 3 via the generate_images method."""
+    # Initialize Vertex AI if not already done
+    if not initialize_aiplatform():
+        raise HTTPException(status_code=500, detail="Vertex AI not configured")
 
     try:
-        # ✅ Correctly instantiate the client
-        client = OpenAI(api_key=openai.api_key)
+        # Initialize the ImageGenerationModel
+        model = ImageGenerationModel.from_pretrained("imagen-3.0-generate-002")
 
+        # Define the base prompt
         base_prompt = (
-            "3D rendered Animal Crossing-style character sitting behind a desk, "
-            "transparent background, clean lighting. "
+            "A cute, 3D-rendered cartoon animal character sitting behind a wooden office desk. "
+            "The character is anthropomorphic, smiling warmly, and wearing a green vest over a white shirt. "
+            "The entire scene should be front-facing, with the character, desk, and all objects completely visible from the front. "
+            "The full desk should be completely within the frame of the image."
+            "The rendering should have a soft, smooth, high-quality look, similar to Nintendo or Animal Crossing-style characters, "
+            "with rounded shapes, clean details, and warm lighting. Background should be plain blue. "
         )
+
+        # Append the user-specific part of the prompt
         full_prompt = base_prompt + req.prompt.strip()
 
-        # ✅ This is a synchronous method (NO await)
-        response = client.images.generate(
-            model="dall-e-3",
+        print(f"Generating image with Imagen using prompt: {full_prompt}")  # Log the final prompt
+
+        # Generate the image
+        images = model.generate_images(
             prompt=full_prompt,
-            size="1024x1024",
-            quality="standard",
-            n=1,
+            number_of_images=1,
+            aspect_ratio="1:1",
+            safety_filter_level="block_some",
+            person_generation="allow_adult",
         )
 
-        url = response.data[0].url
-        print(f"Generated avatar URL: {url}")
-        return {"url": url}
+        # Convert the first image to a data URL for the frontend
+        img_bytes = images[0]._image_bytes  # or images[0].to_bytes()
+        b64 = base64.b64encode(img_bytes).decode()
+        return {"url": f"data:image/png;base64,{b64}"}
 
     except Exception as e:
-        print(f"Avatar generation error: {e}")
-        raise HTTPException(500, detail=f"Internal server error during avatar generation: {e}")
-
+        print(f"Avatar generation error: {type(e).__name__}: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error during avatar generation.")
 
 
 # Add any other endpoints like session end/timeout redirection here
@@ -389,3 +444,18 @@ async def generate_avatar(req: AvatarRequest):
 @app.get("/")
 async def read_root():
     return {"message": "Shopping Chatbot Backend is running."}
+
+# Allow running with uvicorn directly (for development)
+if __name__ == "__main__":
+    import uvicorn
+    # Ensure AI Platform is initialized before starting the server if running directly
+    if not initialize_aiplatform():
+       print("ERROR: Failed to initialize AI Platform. Server may not function correctly.")
+       # Optionally exit if initialization is critical
+       # import sys
+       # sys.exit(1)
+
+    # Use environment variables for host/port or defaults
+    host = os.getenv("HOST", "127.0.0.1")
+    port = int(os.getenv("PORT", "8000"))
+    uvicorn.run(app, host=host, port=port)

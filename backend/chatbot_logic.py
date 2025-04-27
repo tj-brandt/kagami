@@ -11,7 +11,7 @@ from empath import Empath
 from nltk.tokenize import word_tokenize
 
 # --- Constants ---
-DEFAULT_BOT_NAME = "SoraSync"
+DEFAULT_BOT_NAME = "Kagami"
 NO_AVATAR_BOT_NAME = "ShopBot"
 GEMINI_MODEL_NAME = "gemini-2.0-flash-thinking-exp-01-21"
 SESSION_TIMEOUT_SECONDS = 600

@@ -2,15 +2,20 @@
 *.pyc
 __pycache__/
 .env
-venv*/
+venv*/ 
+venv/   
+.venv
 
 # Node
 node_modules/
 dist/
 build/
 
-# OS junk
+# macOS
 .DS_Store
 
-#logs
+# Logs
 experiment_logs/
+
+# VSCode settings
+.vscode/
