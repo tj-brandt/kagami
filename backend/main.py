@@ -1,4 +1,4 @@
-# /Shopping/backend/main.py
+# /Kagami/backend/main.py
 
 import nltk
 import os

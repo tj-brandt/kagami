@@ -19,3 +19,7 @@ experiment_logs/
 
 # VSCode settings
 .vscode/
+
+# Ignore frontend node_modules explicitly
+frontend/node_modules/
+frontend/build/

@@ -1,4 +1,4 @@
-# /Shopping/backend/requirements.txt
+# /Kagami/backend/requirements.txt
 fastapi
 uvicorn[standard]
 python-multipart
