@@ -5,24 +5,21 @@ export default function OrientationWarning() {
 
   useEffect(() => {
     const checkOrientation = () => {
-      const isLandscape = window.matchMedia("(orientation: landscape)").matches;
-      const isSmallScreen = window.innerWidth <= 768; // Tailwind 'md' breakpoint (or customize)
-
-      if (isLandscape && isSmallScreen) {
-        setShowWarning(true);
-      } else {
-        setShowWarning(false);
-      }
+      const isLandscape = window.innerWidth > window.innerHeight;
+      const isMobile = /Mobi|Android/i.test(navigator.userAgent);
+      setShowWarning(isLandscape && isMobile);
     };
 
     window.addEventListener('resize', checkOrientation);
     window.addEventListener('orientationchange', checkOrientation);
 
-    checkOrientation(); // Check immediately when component mounts
+    checkOrientation(); // Initial check
+    const timeoutId = setTimeout(checkOrientation, 500); // Re-check after a short delay
 
     return () => {
       window.removeEventListener('resize', checkOrientation);
       window.removeEventListener('orientationchange', checkOrientation);
+      clearTimeout(timeoutId);
     };
   }, []);
 
