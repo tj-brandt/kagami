@@ -59,10 +59,11 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 # --- CORS Configuration ---
 # Allow localhost during local development
 origins = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
+    "http://localhost:3000",          # Local dev
+    "http://127.0.0.1:3000",           # Local dev
+    "https://kagami.cafe",             
+    "https://kagami-gkcw.onrender.com" 
 ]
-
 # Dynamically add your deployed frontend URL if available
 frontend_url = os.getenv("FRONTEND_URL")
 if frontend_url:
