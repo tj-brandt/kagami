@@ -66,8 +66,9 @@ origins = [
 # Dynamically add your deployed frontend URL if available
 frontend_url = os.getenv("FRONTEND_URL")
 if frontend_url:
-    print(f"Adding FRONTEND_URL to CORS origins: {frontend_url}")
-    origins.append(frontend_url.rstrip('/'))
+    clean_frontend_url = frontend_url.rstrip('/')  # 🧼 Remove trailing slash
+    print(f"Adding FRONTEND_URL to CORS origins: {clean_frontend_url}")
+    origins.append(clean_frontend_url)
 else:
     print("Warning: FRONTEND_URL environment variable not set. CORS might fail in production.")
 
