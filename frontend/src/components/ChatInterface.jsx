@@ -1,163 +1,188 @@
-// /Kagami/Frontend/src/components/ChatInterface.jsx
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import tableImage from '../assets/table.png';
+import kagamiAvatar from '../assets/avatars/capybara.png';
+import backgroundImage from '../assets/background_chat.png';
 import axios from 'axios';
-import { motion, AnimatePresence } from 'framer-motion';
-import capybara from "../assets/capybara.png";
-import bground from "../assets/bground.png"
+import { EmojiPicker } from 'frimousse';
 
-// --- Constants ---
-const FRONTEND_DEFAULT_BOT_NAME = "Kagami";
-const FRONTEND_NO_AVATAR_BOT_NAME = "Kagami";
-const API_BASE_URL = 'http://localhost:8000';
+export default function ChatInterface({ condition, userAvatarUrl, selectedAvatarUrl }) {
+  const conditionString = String(condition || '');
+  const isGenerated = conditionString.includes('generated');
+  const isPregenerated = conditionString.includes('premade');
+  const isNoAvatar = conditionString.includes('noavatar');
 
-// --- SVG Icon for Send Button (Up Arrow Circle - closer to prototype) ---
-const SendIcon = () => (
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-6 h-6">
-    <path fillRule="evenodd" d="M12 2.25c-5.385 0-9.75 4.365-9.75 9.75s4.365 9.75 9.75 9.75 9.75-4.365 9.75-9.75S17.385 2.25 12 2.25zm.53 5.47a.75.75 0 00-1.06 0l-3 3a.75.75 0 101.06 1.06l1.72-1.72v5.69a.75.75 0 001.5 0v-5.69l1.72 1.72a.75.75 0 101.06-1.06l-3-3z" clipRule="evenodd" />
-  </svg>
-);
+  const userAvatar = isGenerated ? userAvatarUrl : selectedAvatarUrl;
 
+  const [messages, setMessages] = useState([
+    { sender: 'bot', text: "So tell me, how's your day going?" }
+  ]);
+  const [inputValue, setInputValue] = useState('');
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
-// --- Chat Interface Component ---
-function ChatInterface({ sessionId, condition, initialMessages }) {
-  const [messages, setMessages] = useState(initialMessages || []);
-  const [newMessage, setNewMessage] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
-  const chatBottomRef = useRef(null);
-
-  const lastMessage = messages.length > 0 ? messages[messages.length - 1] : null;
-  const lastBotMessage = lastMessage?.role === 'assistant' ? lastMessage : null;
-  const secondLastMessage = messages.length > 1 ? messages[messages.length - 2] : null;
-  const userPrompted = secondLastMessage?.role === 'user';
+  const pickerRef = useRef(null);
+  const messagesEndRef = useRef(null);
 
   useEffect(() => {
-    chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [lastBotMessage]);
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages]);
 
-  const handleSendMessage = async (event) => {
-    event.preventDefault();
-    const messageText = newMessage.trim();
-    if (!messageText || isTyping) return;
+  // 👇 Detect outside click
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (pickerRef.current && !pickerRef.current.contains(event.target)) {
+        setShowEmojiPicker(false);
+      }
+    };
 
-    const userMessage = { role: 'user', content: messageText };
-    setMessages((prevMessages) => [...prevMessages, userMessage]);
-    setNewMessage('');
-    setIsTyping(true);
+    if (showEmojiPicker) {
+      document.addEventListener("mousedown", handleClickOutside);
+    } else {
+      document.removeEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showEmojiPicker]);
+
+  const handleSend = async () => {
+    if (inputValue.trim() === '') return;
+
+    const userMessage = { sender: 'user', text: inputValue };
+    setMessages(prev => [...prev, userMessage]);
+    setInputValue('');
+    setShowEmojiPicker(false);
 
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/session/message`, {
-        sessionId: sessionId,
-        message: messageText,
-      });
-
-      const { response: botResponseContent, styleProfile, lsmScore, smoothedLsmAfterTurn } = response.data;
-
-      const botMessage = {
-        role: 'assistant',
-        content: botResponseContent,
-        avatarDisplayed: condition.avatar,
-        debugInfo: { styleProfile, lsmScore, smoothedLsmAfterTurn },
-      };
-
-      setMessages((prevMessages) => [...prevMessages, botMessage]);
-      console.log('Bot Response Data:', response.data);
-
+      const fakeBotReply = "I'm just pretending to be smart for now!";
+      const botMessage = { sender: 'bot', text: fakeBotReply };
+      setMessages(prev => [...prev, botMessage]);
     } catch (error) {
       console.error('Error sending message:', error);
-      const errorMessage = { role: 'assistant', content: 'Oops! Something went wrong. Please try again.' };
-      setMessages((prevMessages) => [...prevMessages, errorMessage]);
-    } finally {
-      setIsTyping(false);
+      const fallbackBot = { sender: 'bot', text: "Oops, something went wrong." };
+      setMessages(prev => [...prev, fallbackBot]);
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
     }
   };
 
   return (
     <div
-      className="relative h-screen w-screen overflow-hidden bg-cover bg-center"
-      style={{ backgroundImage: `url(${bground})`}}
+      style={{
+        backgroundImage: `url(${backgroundImage})`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        width: '100%',
+        height: '100vh',
+        position: 'relative',
+        overflow: 'hidden',
+      }}
     >
-      {/* Chat Box */}
-      <motion.div
-        className="absolute bottom-[10vh] inset-x-0 mx-auto z-10
-                   w-[75%] max-w-3xl h-[18vh] min-h-[120px] max-h-[200px]
-                   bg-white/80 backdrop-blur-sm rounded-xl shadow-lg
-                   flex flex-col p-3"
-        initial={{ opacity: 0, y: 30 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.2 }}
-      >
-        <div className="flex-grow overflow-y-auto mb-2 pr-1 scrollbar-thin scrollbar-thumb-gray-400 scrollbar-track-transparent">
-          <AnimatePresence>
-            {lastBotMessage && (
-              <motion.div
-                key={messages.length - 1}
-                className="inline-block max-w-full"
-                initial={{ opacity: 0, x: -20 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 20 }}
-                transition={{ duration: 0.3 }}
-              >
-                <div className="bg-gray-100 text-gray-800 p-3 rounded-xl rounded-bl-none text-base leading-snug shadow-sm">
-                  {lastBotMessage.content}
-                </div>
-              </motion.div>
-            )}
-
-            {isTyping && !lastBotMessage && (
-              <motion.div
-                key="typing-indicator-box"
-                className="inline-block p-3 rounded-xl bg-gray-200 text-gray-600 shadow-sm rounded-bl-none text-sm italic"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.3 }}
-              >
-                {condition.avatar ? `${FRONTEND_DEFAULT_BOT_NAME} is thinking...` : `${FRONTEND_NO_AVATAR_BOT_NAME} is thinking...`}
-              </motion.div>
-            )}
-          </AnimatePresence>
-          <div ref={chatBottomRef} />
+      {/* 🧡 Messages */}
+      <div className="absolute bottom-[53vh] w-full flex flex-col items-center px-2 space-y-2">
+        {messages.map((msg, idx) => (
+          <div
+          key={idx}
+          className={`max-w-xs sm:max-w-sm md:max-w-md px-4 py-2 rounded-2xl ${
+            msg.sender === 'bot'
+              ? 'bg-[#3B3B3B] text-[#ffffff] mr-40 md:mr-80'
+              : 'bg-[#DEDEDE] text-[#222222] ml-40 md:ml-80'
+          }`}
+        >
+          {msg.text}
         </div>
+        ))}
+      </div>
 
-        {/* Input Form */}
-        <form onSubmit={handleSendMessage} className="flex items-center space-x-2 flex-shrink-0">
+
+
+      {/* 🐾 Avatars + Table */}
+      {!isNoAvatar && (
+        <>
+          <div className="absolute bottom-20 w-full flex justify-center items-end">
+            <img
+              src={kagamiAvatar}
+              alt="Kagami Avatar"
+              className="h-[45vh] max-h-[550px] w-auto object-contain"
+            />
+            <img
+              src={userAvatar}
+              alt="User Avatar"
+              className="h-[45vh] max-h-[550px] w-auto object-contain sm:ml-[-10rem] ml-[-10rem]"
+            />
+          </div>
+          <img
+            src={tableImage}
+            alt="Table"
+            className="absolute max-w-3xl object-contain left-1/2 transform -translate-x-1/2 sm:bottom-[-100px] bottom-[-100px]"
+            style={{ zIndex: 20 }}
+          />
+        </>
+      )}
+
+      {/* 💬 Chat Input */}
+      <div className="absolute bottom-0 w-full flex justify-center  p-4 z-30">
+        <div className="flex w-full max-w-3xl items-center bg-white rounded-full shadow-md px-4 py-2">
+          {/* Emoji Button */}
           <button
-            type="button"
-            className="bg-gray-200 text-gray-700 text-sm px-4 py-2 rounded-full hover:bg-gray-300 transition duration-150 whitespace-nowrap"
+            onClick={() => setShowEmojiPicker(prev => !prev)}
+            className="text-2xl hidden sm:block mr-2"
           >
-            MiruSync
+            😊
           </button>
+
+          {/* Text Input */}
           <input
             type="text"
-            className="flex-grow rounded-lg border-none bg-transparent p-3 focus:outline-none focus:ring-0 placeholder-gray-500 text-base"
-            placeholder={userPrompted ? "Great question! I would like to..." : "Type your message..."}
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            disabled={isTyping}
+            className="flex-1 border-none focus:outline-none text-lg"
+            placeholder="Type a message..."
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onKeyDown={handleKeyDown}
           />
-          <button
-            type="submit"
-            className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition duration-200 ease-in-out
-              ${newMessage.trim() && !isTyping ? 'bg-gray-700 hover:bg-gray-900 text-white' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}
-            disabled={!newMessage.trim() || isTyping}
-            aria-label="Send message"
-          >
-            <SendIcon />
-          </button>
-        </form>
-      </motion.div>
 
-      {/* Capy Image */}
-      <motion.img
-        src={capybara}
-        alt="Kagami"
-        className="absolute bottom-20 inset-x-0 mx-auto
-                   max-h-[50vh] w-auto h-auto object-contain z-0"
-        initial={{ opacity: 0, y: 50 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.6, delay: 0.1 }}
-      />
-    </div>
+          {/* Send Button */}
+          <button
+            onClick={handleSend}
+            disabled={!inputValue.trim()}
+            className={`ml-2 rounded-full px-4 py-2 transition ${
+              !inputValue.trim() ? 'bg-gray-400 cursor-not-allowed' : 'bg-green-500 hover:bg-green-600 text-white'
+            }`}
+          >
+            Send
+          </button>
+        </div>
+      </div>
+
+
+        {/* Emoji Picker */}
+        {showEmojiPicker && (
+          <div
+            ref={pickerRef}
+            className="hidden sm:block absolute bottom-20 right-10 z-50 p-2 bg-white rounded-xl shadow-lg border border-gray-200 w-64 max-h-80 overflow-y-auto"
+            style={{
+              backdropFilter: 'blur(6px)',
+              WebkitBackdropFilter: 'blur(6px)',
+            }}
+          >
+            <EmojiPicker.Root onEmojiSelect={({ emoji }) => setInputValue(prev => prev + emoji)}>
+              <EmojiPicker.Search className="p-2 border-b" />
+              <EmojiPicker.Viewport className="overflow-y-auto">
+                <EmojiPicker.Loading>Loading…</EmojiPicker.Loading>
+                <EmojiPicker.Empty>No emoji found.</EmojiPicker.Empty>
+                <EmojiPicker.List className="p-2 text-2xl" />
+              </EmojiPicker.Viewport>
+            </EmojiPicker.Root>
+          </div>
+        )}
+      </div>
+  
   );
 }
-
-export default ChatInterface;

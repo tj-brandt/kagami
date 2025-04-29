@@ -1,41 +1,68 @@
-// src/components/Intro.jsx
-import React from "react";
-import bground from "../assets/bground.png";
-import kagamimartlogo from "../assets/kagamimartlogo.png";
-import capyicon from "../assets/capyicon.png";
+import React, { useState } from "react";
+import background from "../assets/background.png";      
+import background_na from "../assets/background_na.png"; 
 
 const Intro = ({ onContinue, condition }) => {
   const isAvatar = condition?.avatar;
+  const [consentGiven, setConsentGiven] = useState(false);
+  const [isExiting, setIsExiting] = useState(false);
+
+  const handleContinue = () => {
+    setIsExiting(true);
+    setTimeout(() => {
+      onContinue(); // Call parent to change phase AFTER fade-out
+    }, 300); // match your dissolve animation time (300ms)
+  };
 
   return (
     <div
-      className="w-screen h-screen bg-cover bg-center flex items-center justify-center"
-      style={{ backgroundImage: `url(${isAvatar ? bground : bground})` }}
+      className={`w-screen h-screen bg-cover bg-center flex items-center justify-center transition-opacity duration-300 ${
+        isExiting ? "opacity-0" : "opacity-100"
+      }`}
+      style={{
+        backgroundImage: `url(${isAvatar ? background : background_na})`
+      }}
     >
-      {/* For avatar condition, yellow logo box replaces the white card entirely */}
-      {isAvatar ? (
-        <div className="bg-[#FFF7D6] border-[4px] border-[#F4D75B] rounded-[40px] px-8 py-6 shadow-xl text-center flex flex-col items-center animate-fadeIn">
-          <img src={kagamimartlogo} alt="Kagami Mart Logo" className="w-80 sm:w-96 mx-auto mb-4" />
-          <button
-            onClick={onContinue}
-            className="px-[15px] py-[5px] bg-[#ececec] rounded-[40px] outline outline-1 outline-offset-[-1px] outline-[#c4c4c4] inline-flex justify-center items-center gap-2.5 hover:bg-[#e0e0e0] active:scale-[0.98] transition-all duration-150"
-          >
-            {isAvatar && <img src={capyicon} alt="Capy Icon" className="w-[33px] h-[33px]" />}
-            <div className="text-[#1f1f1f] text-lg font-normal leading-[18px]">Continue</div>
-          </button>
+      <div className="bg-[#1f1f1f] border border-gray-500 rounded-[30px] p-8 max-w-lg w-full text-center text-gray-100 animate-fadeIn">
+        <h1 className="text-3xl font-semibold mb-6">Before we begin...</h1>
+
+        <div className="bg-[#444444] rounded-2xl p-6 mb-6 text-sm sm:text-base text-gray-200 leading-relaxed">
+          <p className="mb-4">
+            Just a heads up: this is a friendly chat with Kagami, your virtual café companion.
+          </p>
+          <p className="mb-4">
+            Kagami will do their best to match your vibe and make you feel at home. This isn’t real advice or a real service — it’s just for fun and to help us learn how people experience AI conversations.
+          </p>
+          <p>
+            Everything you say stays <strong>private</strong> and will only be used for research in a <strong>safe, confidential</strong> way. <strong>You can leave whenever you like.</strong>
+          </p>
         </div>
-      ) : (
-        <div className="bg-gradient-to-b from-sky-50 to-white rounded-[30px] shadow-xl flex flex-col items-center justify-center text-center px-20 py-10 max-w-md">
-          <h1 className="text-xl sm:text-3xl font-regular text-gray-800 mb-2">Welcome to</h1>
-          <h2 className="text-2xl sm:text-4xl font-bold text-gray-900 mb-8">KagamiMart</h2>
-          <button
-            onClick={onContinue}
-            className="px-[15px] py-[5px] bg-[#ececec] rounded-[40px] outline outline-1 outline-offset-[-1px] outline-[#c4c4c4] inline-flex justify-center items-center gap-2.5 hover:bg-[#e0e0e0] active:scale-[0.98] transition-all duration-150"
-          >
-            Continue
-          </button>
+
+        <div className="flex items-center justify-center mb-6 space-x-3">
+          <input
+            type="checkbox"
+            id="consent"
+            checked={consentGiven}
+            onChange={(e) => setConsentGiven(e.target.checked)}
+            className="w-5 h-5 rounded focus:ring-0 focus:outline-none cursor-pointer"
+          />
+          <label htmlFor="consent" className="text-sm sm:text-base cursor-pointer">
+            I understand this is part of a research study.
+          </label>
         </div>
-      )}
+
+        <button
+          onClick={handleContinue}
+          disabled={!consentGiven}
+          className={`px-6 py-3 rounded-full font-medium transition-all duration-150 ${
+            consentGiven
+              ? "bg-white text-gray-900 hover:bg-gray-200 active:scale-95"
+              : "bg-gray-400 text-gray-600 cursor-not-allowed"
+          }`}
+        >
+          Continue
+        </button>
+      </div>
     </div>
   );
 };

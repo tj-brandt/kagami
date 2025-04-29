@@ -2,7 +2,6 @@
 fastapi
 uvicorn[standard]
 python-multipart
-google-generativeai # For Gemini API
 nltk # For tokenization, VADER
 textstat # For readability scores
 emoji # For emoji detection/removal
