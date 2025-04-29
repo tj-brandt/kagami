@@ -62,6 +62,7 @@ function App() {
       const conditionInfo = conditionDetails[cond]; // <-- get the mapping directly
       console.log("Attempting to start session for PID:", pid, "Condition:", cond);
       const cleanBaseUrl = API_BASE_URL.replace(/\/$/, '');  // remove trailing slash if it exists
+      console.log("API_BASE_URL is:", cleanBaseUrl);
       const res = await axios.post(`${cleanBaseUrl}/api/session/start`, {
         participantId: pid,
         condition: {
