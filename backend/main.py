@@ -56,12 +56,27 @@ _aiplatform_initialized = False
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+# --- CORS Configuration ---
+# Allow localhost during local development
+origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+
+# Dynamically add your deployed frontend URL if available
+frontend_url = os.getenv("FRONTEND_URL")
+if frontend_url:
+    print(f"Adding FRONTEND_URL to CORS origins: {frontend_url}")
+    origins.append(frontend_url)
+else:
+    print("Warning: FRONTEND_URL environment variable not set. CORS might fail in production.")
+
 app.add_middleware(
-   CORSMiddleware,
-   allow_origins=["http://localhost:3000"], # Adjust for your frontend URL in production
-   allow_methods=["*"],
-   allow_headers=["*"],
-   allow_credentials=True,
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 os.makedirs(LOG_DIR, exist_ok=True)
