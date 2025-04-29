@@ -67,7 +67,7 @@ origins = [
 frontend_url = os.getenv("FRONTEND_URL")
 if frontend_url:
     print(f"Adding FRONTEND_URL to CORS origins: {frontend_url}")
-    origins.append(frontend_url)
+    origins.append(frontend_url.rstrip('/'))
 else:
     print("Warning: FRONTEND_URL environment variable not set. CORS might fail in production.")
 
