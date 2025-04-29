@@ -3,8 +3,7 @@ import backgroundChat from '../assets/background_chat.png';
 import capybaraPlaceholder from '../assets/avatars/capybara.png'; // Default capybara image
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
-
+const API_BASE_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000').replace(/\/$/, '');
 const MAX_GENERATIONS = 5;
 
 export default function AvatarGenerated({ onNext, sessionId }) {  // <-- pass sessionId here
@@ -71,9 +70,7 @@ export default function AvatarGenerated({ onNext, sessionId }) {  // <-- pass se
       console.log("Sending avatar generation request body:", requestBody); // <--- Add this log
 
       const res = await axios.post(`${API_BASE_URL}/api/avatar/generate`, requestBody);
-
-      const backendBaseUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
-      const newAvatarUrl = `${backendBaseUrl}${res.data.url}`;
+      const newAvatarUrl = `${API_BASE_URL}${res.data.url}`;
       console.log("Generated avatar URL:", newAvatarUrl);
       const newAvatarObject = { url: newAvatarUrl, prompt: currentPrompt }; // Create the object
 
