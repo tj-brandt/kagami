@@ -1,4 +1,3 @@
-# /Kagami/backend/main.py
 import os
 import uuid
 import random
@@ -9,6 +8,9 @@ from dotenv import load_dotenv
 import openai
 from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
+from datetime import datetime
+
+from drive_upload import upload_log_to_drive
 
 # Load environment variables
 load_dotenv()
@@ -17,80 +19,159 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Dict, List, Any, Optional
 
-import download_nltk_data   # runs its checks/downloads into ./nltk_data
+# Run NLTK download/check on startup
+import download_nltk_data
 
 STATIC_AVATAR_DIR = "static/generated"
-
-# Ensure directory exists
+# Ensure static directory exists
 os.makedirs(STATIC_AVATAR_DIR, exist_ok=True)
 
+# Import common utilities
+from common import (
+    detect_style_traits,
+    compute_lsm_score,
+    post_process_response,
+    log_event,
+    log_avatar,
+    MIN_LSM_TOKENS,
+    LSM_SMOOTHING_ALPHA,
+    LOG_DIR,
+    DEFAULT_BOT_NAME,
+    tokenize_text,
+    TEMPERATURE,
+    MAX_TOKENS,
+    get_user_style_sample,
+)
+from chatbot_logic import get_openai_response
 
-# Import chatbot_logic functions/constants
-try:
-    from chatbot_logic import (
-        detect_style_traits,
-        get_openai_response,  # async
-        compute_lsm_score,
-        post_process_response,
-        log_event,
-        log_avatar,
-        MIN_LSM_TOKENS,
-        LSM_SMOOTHING_ALPHA,
-        LOG_DIR,
-        DEFAULT_BOT_NAME,
-    )
-except ImportError as e:
-    print(f"Error importing chatbot_logic: {e}")
-    raise SystemExit(f"Failed to import chatbot_logic: {e}")
+
+def get_time_of_day_label():
+    hour = datetime.now().hour
+    if 5 <= hour < 12:
+        return "morning"
+    elif 12 <= hour < 17:
+        return "afternoon"
+    elif 17 <= hour < 21:
+        return "evening"
+    return "night"
 
 
-# --- Configure Image Generation API (OpenAI GPT-Image-1 and Google Cloud Vertex AI/Imagen) ---
-# Keep OpenAI configuration for GPT-Image-1
+def generate_natural_greeting():
+    time_label = get_time_of_day_label()
+    greetings = [
+        "Hey there, I'm Kagami.",
+        "Hi there, I'm Kagami.",
+        "Hello, I'm Kagami.",
+        "Hey, friend, I'm Kagami."
+    ]
+    themes = {
+        "dreamy": {"feelings": ["dreamy","soft","floaty","hazy"],
+                   "references": [
+                       "like the dreamy opening track of a Beach House album.",
+                       "like discovering a hidden gem on SoundCloud at 3 AM.",
+                       "like a Studio Ghibli scene just before something magical happens.",
+                       "like a faded Polaroid of a summer you almost remember."
+                   ]},
+        "energetic": {"feelings": ["energetic","bright","pumped","charged","awake"],
+                       "references": [
+                           "like hitting a perfect combo in DDR.",
+                           "like when your favorite Charli XCX track kicks in at full volume.",
+                           "like a Friday morning with a fresh playlist drop.",
+                           "like an early 2000s pop anthem blasting through wired headphones."
+                       ]},
+        "nostalgic": {"feelings": ["nostalgic","familiar","reflective","bittersweet"],
+                       "references": [
+                           "like scrolling Tumblr at 2 AM in 2013.",
+                           "like customizing your Myspace profile back in the day.",
+                           "like the sound of booting up an iPod Classic.",
+                           "like an old MSN away message you forgot you wrote."
+                       ]},
+        "chill": {"feelings": ["chill","calm","relaxed","mellow"],
+                  "references": [
+                      "like lo-fi beats echoing in a quiet room.",
+                      "like a long walk with no destination.",
+                      "like your favorite hoodie and a cup of something warm.",
+                      "like being underwater with headphones on."
+                  ]},
+        "cozy": {"feelings": ["cozy","warm","vibey","relaxed"],
+                  "references": [
+                      "like redecorating your Animal Crossing home on a rainy day.",
+                      "like finding a soft corner of the internet that still feels alive.",
+                      "like opening a well-worn book and knowing the first line by heart.",
+                      "like your favorite fuzzy socks and a playlist that understands you."
+                  ]}
+    }
+    weights = {
+        "morning": ["energetic"]*3 + ["chill"]*2 + ["cozy"],
+        "afternoon": ["chill"]*2 + ["cozy","nostalgic"],
+        "evening": ["nostalgic","cozy","dreamy"]*2,
+        "night": ["dreamy"]*3 + ["nostalgic","cozy"]
+    }
+    questions = {
+        "morning":[
+            "What kind of music gets you moving in the morning?",
+            "Got a favorite playlist or podcast that kicks off your day?",
+            "Do you ever watch anything while eating breakfast — YouTube, cartoons, a comfort show?"
+        ],
+        "afternoon":[
+            "What song’s been stuck in your head today?",
+            "Caught anything good on your breaks — a TikTok series, a quick episode?",
+            "What’s your ideal chill vibe this afternoon — music, a show, or a bit of both?"
+        ],
+        "evening":[
+            "What’s your go-to comfort show or movie when you’re done with the day?",
+            "Heard any good albums or playlists lately for winding down?",
+            "What kinds of stories pull you in at night — drama, fantasy, real-life stuff?",
+            "Do you have a favorite rewatch for evenings, or do you like trying something new?",
+            "What’s your perfect soundtrack for golden-hour walks or chill evenings?"
+        ],
+        "night":[
+            "What's your ideal nighttime vibe — comfort rewatch, deep dive, or scroll spiral?",
+            "Got a favorite playlist or show you always come back to late at night?"
+        ]
+    }
+    theme = random.choice(weights.get(time_label, list(themes.keys())))
+    feeling = random.choice(themes[theme]["feelings"])
+    reference = random.choice(themes[theme]["references"])
+    greeting = random.choice(greetings)
+    question = random.choice(questions.get(time_label, []))
+    if random.choice([True,False]):
+        return f"{greeting} This {time_label} feels a little {feeling}. It’s {reference} {question}"
+    return f"{greeting} To me, this {time_label} feels {feeling}, {reference} {question}"
+
+# --- OpenAI Image Edits via GPT-Image-1 ---
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 if not OPENAI_API_KEY:
-    raise RuntimeError("Missing OpenAI API Key")
+    raise RuntimeError("Missing OPENAI_API_KEY environment variable.")
 
-_aiplatform_initialized = False
-
-# --- FastAPI setup ---
+# --- FastAPI Setup ---
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# --- CORS Configuration ---
-# Allow localhost during local development
-origins = [
-    "http://localhost:3000",          # Local dev
-    "http://127.0.0.1:3000",           # Local dev
-    "https://kagami.cafe",             
-    "https://kagami-gkcw.onrender.com" 
-]
-# Dynamically add your deployed frontend URL if available
+origins = ["http://localhost:3000","http://127.0.0.1:3000","https://kagami.chat","https://kagami-gkcw.onrender.com"]
 frontend_url = os.getenv("FRONTEND_URL")
 if frontend_url:
-    clean_frontend_url = frontend_url.rstrip('/')  # 🧼 Remove trailing slash
-    print(f"Adding FRONTEND_URL to CORS origins: {clean_frontend_url}")
-    origins.append(clean_frontend_url)
+    origins.append(frontend_url.rstrip("/"))
 else:
-    print("Warning: FRONTEND_URL environment variable not set. CORS might fail in production.")
-
+    print("Warning: FRONTEND_URL not set; CORS may fail.")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["*"]
 )
 
+# Ensure log directory exists
 os.makedirs(LOG_DIR, exist_ok=True)
 _sessions: Dict[str, Dict[str, Any]] = {}
 
-# --- Pydantic models for existing endpoints ---
+# --- Pydantic Models ---
 class SessionStartRequest(BaseModel):
-    participantId: Optional[str] = None  # Optional now
+    participantId: Optional[str] = None
     avatarUrl: Optional[str] = None
     avatarPrompt: Optional[str] = None
-    condition: Optional[Dict[str, Any]] = None
-
+    condition: Optional[Dict[str, bool]] = None
 
 class SessionStartResponse(BaseModel):
     sessionId: str
@@ -107,44 +188,117 @@ class MessageResponse(BaseModel):
     lsmScore: float
     smoothedLsmAfterTurn: float
 
-# --- NEW: Avatar generation request model ---
 class AvatarRequest(BaseModel):
     prompt: str
-    sessionId: str  # Added sessionId here as requested
+    sessionId: str
 
-# --- Endpoint: get session info ---
-@app.get("/api/session/{session_id}")
-async def get_session_info(session_id: str):
-    """Returns basic session info, including cached generated avatars."""
-    session = _sessions.get(session_id)
+class AvatarResponse(BaseModel):
+    url: str
+    prompt: str
+
+# --- Session End ---
+@app.post("/api/session/end")
+async def end_session(req: MessageRequest):
+    sid = req.sessionId
+    session = _sessions.pop(sid, None)
+    if session:
+        log_event({"event_type": "session_end"}, session_info=session)
+        try:
+            upload_log_to_drive(session.get("log_file_path"))
+        except Exception as e:
+            print(f"Log upload failed for session {sid}: {e}")
+        return {"message": f"Session {sid} ended successfully."}
+    raise HTTPException(status_code=404, detail="Session not found")
+
+# --- Root/Health Check ---
+@app.get("/")
+async def read_root():
+    return {"message": "Kagami Chat — backend humming smoothly."}
+
+# --- Run with Uvicorn if Executed Directly ---
+if __name__ == "__main__":
+    import uvicorn
+    host = os.getenv("HOST", "127.0.0.1")
+    port = int(os.getenv("PORT", "8000"))
+    uvicorn.run("main:app", host=host, port=port, reload=True)
+    # --- Avatar Generation Endpoint ---
+@app.post("/api/avatar/generate", response_model=AvatarResponse)
+async def generate_avatar(req: AvatarRequest):
+    sid = req.sessionId
+    session = _sessions.get(sid)
     if not session:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    # Ensure 'generated_avatars' key exists even if empty, matching the return structure
-    return {
-        "generated_avatars": session.get("generated_avatars", []),
-        "condition": session.get("condition", {}),
-        "participantId": session.get("participantId", "00"),
-    }
+    if len(session["generated_avatars"]) >= 5:
+        raise HTTPException(status_code=400, detail="Maximum avatar generations reached")
 
+    base_image_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../frontend/src/assets/avatars/kagami.png"))
+    if not os.path.exists(base_image_path):
+        raise HTTPException(status_code=500, detail="Base image not found")
 
-# --- Endpoint: start session ---
+    base_prompt_template = (
+        "Edit this cute 3D animal character to match: [__USER_PROMPT__]. "
+        "Keep the exact same pose, sitting with legs crossed and hands in the same position. "
+        "Maintain a perfectly front-facing camera angle (0° yaw, 0° pitch, 0° roll), with no tilt or rotation. "
+        "The entire full-body must remain fully visible, centered, and proportional within the 1024×1024 frame. "
+        "Preserve the soft Animal Crossing style. "
+        "Only modify the animal species, accessories, and clothing based on the prompt. "
+        "**The background must remain fully transparent, with no scenery, patterns, colors, or objects added.**"
+    )
+
+    user_prompt = req.prompt.strip()
+    if not user_prompt:
+        raise HTTPException(status_code=400, detail="Avatar prompt cannot be empty")
+    final_prompt = base_prompt_template.replace("[__USER_PROMPT__]", user_prompt)
+
+    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
+    with open(base_image_path, "rb") as img_file:
+        files = {"image": (os.path.basename(base_image_path), img_file, "image/png")}
+        data = {
+            "model": "gpt-image-1",
+            "prompt": final_prompt,
+            "size": "1024x1024",
+            "quality": "medium",
+            "background": "transparent",
+        }
+        response = requests.post("https://api.openai.com/v1/images/edits", headers=headers, files=files, data=data, timeout=120)
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=response.status_code, detail=f"OpenAI API Error: {response.text}")
+
+    image_b64 = response.json()["data"][0].get("b64_json")
+    if not image_b64:
+        raise HTTPException(status_code=500, detail="Image generation failed: No image data returned")
+
+    image_bytes = base64.b64decode(image_b64)
+    filename = f"{sid}_avatar{len(session['generated_avatars']) + 1}.png"
+    filepath = os.path.join(STATIC_AVATAR_DIR, filename)
+    with open(filepath, "wb") as f:
+        f.write(image_bytes)
+
+    url = f"/static/generated/{filename}"
+    avatar_entry = {"url": url, "prompt": user_prompt}
+    session["generated_avatars"].append(avatar_entry)
+    log_avatar(session["participantId"], url, user_prompt)
+    log_event({
+        "event_type": "avatar_generated",
+        "avatar_prompt": user_prompt,
+        "avatar_url": url
+    }, session_info=session)
+
+    return AvatarResponse(url=url, prompt=user_prompt)
+
+# --- Session Start ---
 @app.post("/api/session/start", response_model=SessionStartResponse)
 async def start_session(req: SessionStartRequest):
-    pid = req.participantId.zfill(2) if req.participantId else "00" # Pad ID if needed for logging
-    sid = str(uuid.uuid4()) # Use full UUID string
-
-    # Randomize condition (avatar & LSM) - this logic should be here
+    pid = req.participantId.zfill(2) if req.participantId else "00"
+    sid = str(uuid.uuid4())
     condition = req.condition or {
-    "lsm": random.choice([True, False]),
-    "avatar": random.choice([True, False])
+        "lsm": random.choice([True, False]),
+        "avatar": random.choice([True, False])
     }
 
-    # Prepare log file path and initial session data structure
-    timestamp_str = time.strftime("%Y%m%d_%H%M%S", time.gmtime()) # UTC time
-    log_filename = f"participant_{pid}_{sid}.jsonl"
-    log_file_path = os.path.join(LOG_DIR, log_filename)
-
+    log_file_path = os.path.join(LOG_DIR, f"participant_{pid}_{sid}.jsonl")
     _sessions[sid] = {
         "participantId": pid,
         "sessionId": sid,
@@ -155,340 +309,114 @@ async def start_session(req: SessionStartRequest):
         "history": [],
         "avatar_url": req.avatarUrl,
         "avatar_prompt": req.avatarPrompt,
-        "generated_avatars": [] # Initialize empty list for caching generated avatars
+        "generated_avatars": []
     }
 
-    # Log avatar details if provided
-    # This happens *after* session state is created with avatar_url/prompt
+    session = _sessions[sid]
     if req.avatarUrl and req.avatarPrompt:
         try:
-            # Log the avatar URL and prompt used for this participant
             log_avatar(pid, req.avatarUrl, req.avatarPrompt)
         except Exception as e:
-            print(f"Warning: Failed to log avatar for session {sid}, participant {pid}: {e}")
-
-
-    # --- Generate and Log Initial Greeting (Turn 0) ---
-    # Use the logic function to get the initial greeting
-    # No user prompt, empty history for the first call
-    # Pass session_info to LLM function for potential internal logging/context
-    initial_style_profile = {} # No user input yet
-    session = _sessions[sid] # Get the session data we just created
+            print(f"Avatar logging failed: {e}")
 
     try:
-        initial_greeting_raw, system_instr = await get_openai_response(
-            user_prompt="<System Initialized>", # Internal marker for LLM context if needed
-            chat_history=[],
-            is_adaptive=condition['lsm'],
-            # Use session state here, which was just populated from req
-            show_avatar=bool(session.get("avatar_url")),
-            style_profile=initial_style_profile # Empty profile for turn 0
-            
-        )
-        # Post-process the raw greeting based on the assigned condition
-        initial_greeting_processed = post_process_response(initial_greeting_raw, condition['lsm'])
+        initial_greeting = generate_natural_greeting()
     except Exception as e:
-        print(f"Error generating initial greeting for session {sid}: {e}")
-        initial_greeting_processed = "Hello! I'm ready to help you with your shopping." # Fallback
-        system_instr = "" # No instruction used for fallback
+        print(f"Greeting generation failed: {e}")
+        initial_greeting = f"Hey there, I'm {DEFAULT_BOT_NAME}. Glad you could make it."
 
-
-    # Add initial greeting to session history
     session["history"].append({
         "role": "assistant",
-        "content": initial_greeting_processed,
+        "content": initial_greeting,
         "turn_number": 0,
-        "avatar_url": session.get("avatar_url") # Include avatar_url in history entry
+        "avatar_url": session.get("avatar_url")
     })
 
-    # Log session start event (after history is initialized with greeting)
-    # Pass the current state of session to log_event
     log_event({
         "event_type": "session_start",
+        "participant_id": pid,
+        "session_id": sid,
         "initial_condition": condition,
-        "initial_greeting": initial_greeting_processed,
-        "system_instruction_initial": system_instr,
-        "avatar_url": session.get("avatar_url"),
-        "avatar_prompt": session.get("avatar_prompt")
+        "initial_greeting": initial_greeting
     }, session_info=session)
 
-
-    # Return session details and the initial message(s) to the frontend
     return SessionStartResponse(
         sessionId=sid,
         condition=condition,
-        initialHistory=session["history"] # Return the history, which contains the first message
+        initialHistory=session["history"]
     )
 
-
-# --- Endpoint: handle a message ---
+# --- Message Handling ---
 @app.post("/api/session/message", response_model=MessageResponse)
 async def handle_message(req: MessageRequest):
     sid = req.sessionId
-    session = _sessions.get(sid) # Use .get() to avoid KeyError if session not found
-
+    session = _sessions.get(sid)
     if not session:
-        print(f"Error: Session ID not found: {sid}")
-        raise HTTPException(status_code=404, detail="Session not found or expired")
+        raise HTTPException(status_code=404, detail="Session not found")
 
-
-    # --- State Management for the Turn ---
-    session["turn_number"] += 1 # Increment turn counter *before* processing the user message
-    current_turn = session["turn_number"]
-
+    session["turn_number"] += 1
     user_text = req.message
+    current_turn = session["turn_number"]
     condition = session["condition"]
-    # chat_history is session["history"], accessed directly below
 
-
-    # --- Processing User Input ---
-    # 1. Detect User Style for CURRENT prompt using ported function
+    # Analyze user style
     traits = detect_style_traits(user_text)
-    user_token_count = traits.get("word_count", 0) # Get token count from detected traits
+    user_token_count = traits.get("word_count", 0)
+    traits["lsm_score_prev"] = session.get("smoothed_lsm_score", 0.5)
 
-    # 2. Add PREVIOUS smoothed LSM score to the profile for prompt generation
-    traits["lsm_score_prev"] = session["smoothed_lsm_score"]
-
-    # --- Add User Message to History (BEFORE calling LLM) ---
-    # It's important the LLM sees the user's message in the history context
     session["history"].append({
         "role": "user",
         "content": user_text,
-        "turn_number": current_turn,
-        # User messages don't typically have an avatar displayed in the same way,
-        # but you could include user info if needed later
-        # "avatar_url": None # Or user avatar if you implement that
+        "turn_number": current_turn
     })
+    log_event({"event_type": "user_message", "content": user_text, "traits": traits}, session_info=session)
 
-    # --- Logging User Message ---
-    # 3. Log user message event (log *after* adding to history if history affects logging)
-    log_event({
-        "event_type": "user_message",
-        # turn_number is added by log_event using session info
-        "user_prompt": user_text,
-        "style_profile": traits # Log the full detected profile (includes prev smoothed LSM)
-    }, session_info=session)
+    # Get bot response
+    bot_raw, _ = await get_openai_response(
+        user_prompt=user_text,
+        chat_history=session["history"],
+        is_adaptive=condition["lsm"],
+        show_avatar=bool(session.get("avatar_url")),
+        style_profile=traits
+    )
 
-    # --- Generating Bot Response ---
-    # Pass the session history *including* the current user message now added
-    try:
-        bot_response_raw, system_instr_used = await get_openai_response(
-            user_prompt=user_text, # Pass current prompt explicitly
-            chat_history=session["history"], # Pass the full history including the user's latest message
-            is_adaptive=condition["lsm"],
-            show_avatar=bool(session.get("avatar_url")), # Use session state for avatar info
-            style_profile=traits # Pass the profile containing prev smoothed LSM
-        )
-    except Exception as e:
-         # Log the error specifically if get_openai_response doesn't handle all errors
-         print(f"Critical Error in get_openai_response for session {sid}, turn {current_turn}: {e}")
-         # Set variables to indicate failure and provide a fallback response
-         processed_bot_response = "Sorry, I encountered an unexpected error while trying to generate a response. Please try again later."
-         raw_lsm = 0.5 # Default LSM if response fails
-         new_smoothed_lsm = session["smoothed_lsm_score"] # Don't update smoothed LSM
-         system_instr_used = "" # No meaningful instruction used for error response
-         lsm_reason = "Error generating response."
-
-         # Log the error event
-         log_event({
-            "event_type": "llm_generation_failed",
-            "error_message": str(e),
-            "user_prompt": user_text,
-            "system_instruction_used": system_instr_used, # Log what prompt was *attempted*
-            "style_profile_used_for_prompt": traits # Log profile used
-         }, session_info=session)
-
-         # Return the error response immediately
-         # Note: The user message *was* added to history, but the bot response is an error.
-         # Consider if you need to add the error response to history as well.
-         # For now, following original logic: don't add error response to history.
-         return MessageResponse(
-             response=processed_bot_response,
-             styleProfile=traits, # Return the user traits detected
-             lsmScore=raw_lsm,
-             smoothedLsmAfterTurn=new_smoothed_lsm
-         )
-
-
-    # --- Post-processing and LSM Calculation (only if LLM call was successful) ---
-    # This section only runs if the try block above succeeded without an exception
-    # 5. Post-process the raw response
-    processed_bot_response = post_process_response(bot_response_raw, condition["lsm"])
-    # Need bot token count for LSM smoothing check.
-    bot_traits      = detect_style_traits(processed_bot_response)
+    bot_response = post_process_response(bot_raw, condition["lsm"])
+    bot_traits = detect_style_traits(bot_response)
     bot_token_count = bot_traits.get("word_count", 0)
 
-    # 6. Calculate Turn LSM and Update Smoothed Score
-    # Use the raw user prompt and the PROCESSED bot response
-    raw_lsm = compute_lsm_score(user_text, processed_bot_response)
+    # LSM calculation
+    recent_sample = get_user_style_sample(session["history"])
+    user_sample = recent_sample if recent_sample else user_text
+    raw_lsm = compute_lsm_score(user_sample, bot_response)
 
+    update_smoothed = (
+        user_token_count >= MIN_LSM_TOKENS and
+        bot_token_count >= MIN_LSM_TOKENS
+    )
+    prev_score = session.get("smoothed_lsm_score", 0.5)
+    new_score = (
+        (LSM_SMOOTHING_ALPHA * raw_lsm) +
+        ((1 - LSM_SMOOTHING_ALPHA) * prev_score)
+    ) if update_smoothed else prev_score
 
-    # Determine if smoothed score should be updated based on token counts
-    update_smoothed_lsm = True
-    lsm_reason = ""
-
-    if user_token_count < MIN_LSM_TOKENS:
-        update_smoothed_lsm = False
-        lsm_reason += f"User ({user_token_count}) < {MIN_LSM_TOKENS} tokens. "
-    if bot_token_count < MIN_LSM_TOKENS:
-        update_smoothed_lsm = False
-        lsm_reason += f"Bot ({bot_token_count}) < {MIN_LSM_TOKENS} tokens."
-
-    # Calculate the new smoothed LSM score
-    prev_smoothed_lsm = session["smoothed_lsm_score"]
-    if update_smoothed_lsm:
-        new_smoothed_lsm = (LSM_SMOOTHING_ALPHA * raw_lsm) + ((1 - LSM_SMOOTHING_ALPHA) * prev_smoothed_lsm)
-        session["smoothed_lsm_score"] = new_smoothed_lsm # Update state in _sessions
-        if not lsm_reason: lsm_reason = f"Smoothed Score Updated: {new_smoothed_lsm:.3f}"
-    else:
-         new_smoothed_lsm = prev_smoothed_lsm # Keep the old one
-         if not lsm_reason: lsm_reason = "Smoothed Score Not Updated (token count below min)."
-
-
-    # --- Adding Bot Message to History and Logging ---
-    # 7. Add bot message to session history (AFTER generating and processing it)
+    session["smoothed_lsm_score"] = new_score
     session["history"].append({
         "role": "assistant",
-        "content": processed_bot_response,
+        "content": bot_response,
         "turn_number": current_turn,
-        "avatar_url": session.get("avatar_url") # Include avatar_url in history entry
+        "avatar_url": session.get("avatar_url")
     })
 
-
-    # 8. Log bot response event (log *after* adding to history if history affects logging)
     log_event({
         "event_type": "bot_response",
-        "user_prompt": user_text, # Log the prompt it responded to
-        "raw_response": bot_response_raw,
-        "processed_response": processed_bot_response,
-        "style_profile_used_for_prompt": traits, # Profile used for THIS response generation (includes prev smoothed LSM)
-        "lsm_score_raw_turn": raw_lsm,
-        "smoothed_lsm_after_turn": new_smoothed_lsm,
-        "lsm_update_reason": lsm_reason,
-        "system_instruction_used": system_instr_used,
-        # condition, participant_id, session_id, turn_number added by log_event using session_info
+        "content": bot_response,
+        "lsm_score_raw": raw_lsm,
+        "lsm_score_smoothed": new_score
     }, session_info=session)
 
-
-    # --- Return Response to Frontend ---
-    # 9. Return the processed response and full data to the frontend
     return MessageResponse(
-        response=processed_bot_response,
-        styleProfile=traits, # Return the profile detected for the *user's* message
-        lsmScore=raw_lsm, # Raw LSM for *this* turn (User vs Processed Bot)
-        smoothedLsmAfterTurn=new_smoothed_lsm # Smoothed LSM *after* this turn (used for *next* turn's prompt)
+        response=bot_response,
+        styleProfile=traits,
+        lsmScore=raw_lsm,
+        smoothedLsmAfterTurn=new_score
     )
-
-# --- Endpoint: generate avatar ---
-@app.post("/api/avatar/generate")
-async def generate_avatar(req: AvatarRequest):
-    try:
-        sid = req.sessionId
-        if sid not in _sessions:
-            raise HTTPException(status_code=404, detail="Session not found")
-
-        session = _sessions[sid]
-
-        if "generated_avatars" in session and len(session["generated_avatars"]) >= 5:
-            raise HTTPException(status_code=400, detail="Maximum avatar generations reached.")
-
-        base_image_path = "../frontend/src/assets/avatars/capybara.png"
-        if not os.path.exists(base_image_path):
-            raise HTTPException(status_code=500, detail="Base image not found.")
-
-        base_prompt_template = (
-        "Edit this cute 3D animal character to match: [__USER_PROMPT__]. "
-        "Keep the exact same pose, fully seated on the stool, with legs and hands in the same position. "
-        "Maintain a perfectly front-facing camera angle (0° yaw, 0° pitch, 0° roll), with no tilt or rotation. "
-        "The entire full-body must remain fully visible, centered, and proportional within the 1024×1024 frame. "
-        "Preserve the soft Animal Crossing style, warm lighting, and original stool/chair design. "
-        "Only modify the animal species, accessories, and clothing based on the prompt. "
-        "**The background must remain fully transparent, with no scenery, patterns, colors, or objects added.**"
-    )
-        user_specific_prompt = req.prompt.strip()
-        final_prompt = base_prompt_template.replace("[__USER_PROMPT__]", user_specific_prompt)
-
-        print(f"Generating avatar with GPT-Image-1 for session {sid}...")
-
-        # Use manual POST to OpenAI
-        url = "https://api.openai.com/v1/images/edits"
-        headers = {
-            "Authorization": f"Bearer {OPENAI_API_KEY}",
-        }
-        files = {
-            "image": open(base_image_path, "rb"),
-        }
-        data = {
-            "model": "gpt-image-1",
-            "prompt": final_prompt,
-            "size": "1024x1024",
-            "quality": "medium",
-            "background": "transparent",
-        }
-
-        response = requests.post(url, headers=headers, files=files, data=data, timeout=600)
-        if response.status_code != 200:
-            raise HTTPException(status_code=500, detail=f"OpenAI API error: {response.text}")
-
-        response_json = response.json()
-        image_base64 = response_json["data"][0]["b64_json"]
-
-        # Decode and save the avatar
-        image_bytes = base64.b64decode(image_base64)
-        avatar_filename = f"{sid}_avatar{len(session['generated_avatars']) + 1}.png"
-        avatar_path = os.path.join(STATIC_AVATAR_DIR, avatar_filename)
-
-        with open(avatar_path, "wb") as f:
-            f.write(image_bytes)
-
-        # Construct the public URL (assuming your backend serves /static/generated/)
-        avatar_url = f"/static/generated/{avatar_filename}"
-
-        session["generated_avatars"].append({
-            "url": avatar_url,
-            "prompt": user_specific_prompt
-        })
-
-        return {"url": avatar_url}
-
-    except HTTPException as http_exc:
-        raise http_exc
-    except Exception as e:
-        print(f"Avatar generation error: {type(e).__name__}: {e}")
-        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
-
-
-# Add any other endpoints like session end/timeout redirection here
-# Example: Basic session cleanup (optional, depends on requirements)
-# @app.post("/api/session/end")
-# async def end_session(req: MessageRequest): # Reuse or create new model
-#     sid = req.sessionId
-#     session = _sessions.pop(sid, None) # Remove session if exists
-#     if session:
-#         log_event({"event_type": "session_end"}, session_info=session)
-#         return {"message": "Session ended successfully."}
-#     else:
-#         raise HTTPException(status_code=404, detail="Session not found.")
-
-# Optional: Add root endpoint for health check
-@app.get("/")
-async def read_root():
-    return {"message": "Shopping Chatbot Backend is running."}
-
-# Allow running with uvicorn directly (for development)
-if __name__ == "__main__":
-    import uvicorn
-    # Ensure AI Platform is initialized before starting the server if running directly
-    # Keep this if you intend to use Vertex AI/Imagen for other purposes in this app
-    # if not initialize_aiplatform():
-    #    print("INFO: AI Platform initialization failed. Imagen features will not be available.")
-       # Optionally exit if initialization is critical
-       # import sys
-       # sys.exit(1)
-    # Note: initialize_aiplatform() is NOT needed for the /api/avatar/generate endpoint which uses OpenAI
-
-
-    # Use environment variables for host/port or defaults
-    host = os.getenv("HOST", "127.0.0.1")
-    port = int(os.getenv("PORT", "8000"))
-    uvicorn.run(app, host=host, port=port)

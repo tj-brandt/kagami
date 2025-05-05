@@ -23,3 +23,4 @@ experiment_logs/
 # Ignore frontend node_modules explicitly
 frontend/node_modules/
 frontend/build/
+backend/credentials.json

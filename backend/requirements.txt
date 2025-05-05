@@ -1,10 +1,14 @@
-# /Kagami/backend/requirements.txt
 fastapi
 uvicorn[standard]
 python-multipart
-nltk # For tokenization, VADER
-textstat # For readability scores
-emoji # For emoji detection/removal
-empath # For psychological categories
+nltk
+textstat
+emoji
+empath
 openai
-google-cloud-aiplatform #
+requests
+python-dotenv
+pydantic
+google-auth
+google-auth-oauthlib
+google-api-python-client

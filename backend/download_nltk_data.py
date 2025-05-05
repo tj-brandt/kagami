@@ -1,4 +1,3 @@
-# /Kagami/backend/download_nltk_data.py
 import nltk
 import os
 import sys

@@ -3,9 +3,10 @@ import backgroundChat from '../assets/background_chat.png';
 import frog from '../assets/avatars/frog.png';
 import panda from '../assets/avatars/panda.png';
 import cat from '../assets/avatars/cat.png';
-import dog from '../assets/avatars/dog.png';
-import dog_td from '../assets/avatars/dog_td.png';
+import capybara from '../assets/avatars/capybara.png';
 import bird from '../assets/avatars/bird.png';
+import elephant from '../assets/avatars/elephant.png';
+import arrowImg from '../assets/arrow.png';
 
 
 
@@ -13,8 +14,8 @@ const avatars = [
   { id: 'frog', label: 'Frog', imgsrc: frog },
   { id: 'panda', label: 'Panda', imgsrc: panda },
   { id: 'cat', label: 'Cat', imgsrc: cat },
-  { id: 'dog', label: 'Dog', imgsrc: dog },
-  { id: 'dog_td', label: 'Dog_Td', imgsrc: dog_td },
+  { id: 'elephant', label: 'Elephant', imgsrc: elephant },
+  { id: 'capybara', label: 'Capybara', imgsrc: capybara },
   { id: 'bird', label: 'Bird', imgsrc: bird },
 ];
 
@@ -97,8 +98,12 @@ export default function AvatarSelection({ onNext }) {
 
       {/* Arrows and Avatar */}
       <div className="flex items-end justify-center gap-10 mb-0">
-        <button onClick={handlePrev} aria-label="Previous Avatar">
-          <span className="text-5xl">←</span>
+          <button onClick={handlePrev} aria-label="Previous Avatar">
+        <img
+          src={arrowImg}
+          alt="Previous"
+          className="w-10 h-10 transform hover:scale-110 transition relative -top-40"
+        />
         </button>
 
         <img
@@ -110,7 +115,11 @@ export default function AvatarSelection({ onNext }) {
         />
 
         <button onClick={handleNext} aria-label="Next Avatar">
-          <span className="text-5xl">→</span>
+          <img
+            src={arrowImg}
+            alt="Next"
+            className="w-10 h-10 hover:scale-110 rotate-180 transition relative -top-40"
+          />
         </button>
       </div>
 
@@ -118,7 +127,7 @@ export default function AvatarSelection({ onNext }) {
       <div className="mb-10">
         <button
           onClick={handleConfirm}
-          className="bg-green-500 text-white px-6 py-3 rounded-full hover:bg-green-600 transition"
+          className="bg-white text-gray-600 px-6 py-3 rounded-full hover:bg-gray-300 transition"
         >
           Confirm
         </button>
