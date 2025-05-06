@@ -1,26 +1,38 @@
 # Python
 *.pyc
 __pycache__/
-.env
-venv*/ 
-venv/   
-.venv
+*.env # General .env files
+venv/
+.venv/ # Common alternative to venv
+# If you use pipenv or poetry, add their lock files if you don't want them committed (though often they are)
+# Pipfile.lock
+# poetry.lock
 
-# Node
-node_modules/
-dist/
-build/
+# Backend specific
+backend/.env # More specific for backend .env if you have one
+backend/nltk_data/
+backend/experiment_logs/ # Matches your LOG_DIR
+backend/service_account.json # CRITICAL: For Google Cloud credentials
+# backend/credentials.json # You had this, if it's different from service_account.json and sensitive, keep it
+
+# Node / Frontend specific
+node_modules/ # General node_modules, will cover frontend/node_modules too
+frontend/node_modules/ # Explicitly, good for clarity
+frontend/build/
+frontend/dist/ # Common for Vite/other bundlers
+frontend/.env # For frontend-specific environment variables
 
 # macOS
 .DS_Store
 
-# Logs
-experiment_logs/
-
-# VSCode settings
+# VSCode settings (optional, some teams commit this for consistency)
 .vscode/
 
-# Ignore frontend node_modules explicitly
-frontend/node_modules/
-frontend/build/
-backend/credentials.json
+# Log files (general, if any are at the root)
+*.log
+logs/
+
+# IDE specific (examples)
+.idea/ # For JetBrains IDEs
+*.suo
+*.user
