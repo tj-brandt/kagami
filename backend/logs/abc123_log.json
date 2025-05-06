@@ -1,0 +1,14 @@
+{
+  "session_id": "abc123",
+  "events": [
+    {
+      "type": "start",
+      "timestamp": "2025-05-05T10:00:00Z"
+    },
+    {
+      "type": "message",
+      "sender": "user",
+      "text": "Hello Kagami!"
+    }
+  ]
+}

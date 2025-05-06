@@ -5,36 +5,85 @@ import axios from 'axios';
 import smileIcon from '../assets/smile.png'; // Adjust path if needed
 import { EmojiPicker } from 'frimousse'; // Make sure this library is installed
 
-// Added 'backendCondition' prop to receive the condition object { avatar: bool, lsm: bool }
-export default function ChatInterface({ sessionId, condition, backendCondition, userAvatarUrl, selectedAvatarUrl, apiBaseUrl, initialMessages, participantId, onEndSession }) {
-  const conditionString = String(condition || ''); // This is the name like 'avatar_premade_adaptive'
+export default function ChatInterface({ 
+  sessionId, 
+  condition, // This is the string like "Avatar_Generated_Adaptive" passed from App.js
+  backendCondition, // This is the {avatar: bool, lsm: bool} object from backend session start
+  userAvatarUrl,      // URL for generated avatar
+  selectedAvatarUrl,  // URL for premade avatar
+  apiBaseUrl, 
+  initialMessages, 
+  participantId,      // Passed as a prop
+  // onEndSession // This prop might not be strictly needed if redirect is handled here
+}) {
+  const conditionString = String(condition || ''); 
   const isGenerated = conditionString.includes('generated');
-  const isPregenerated = conditionString.includes('premade');
+  // const isPregenerated = conditionString.includes('premade'); // Not strictly needed if userAvatar logic covers it
   const isNoAvatar = conditionString.includes('noavatar');
 
-  const userAvatar = isGenerated ? userAvatarUrl : selectedAvatarUrl;
+  // Determine which avatar to display for the user side (if any)
+  // This logic seems fine based on your prop names
+  const userDisplayAvatar = isGenerated ? userAvatarUrl : selectedAvatarUrl;
 
-  const [messages, setMessages] = useState(() =>
-    initialMessages && initialMessages.length > 0
-      ? initialMessages
-          .filter(msg => msg.content && msg.role)
-          .map(msg => ({
-            sender: msg.role === 'assistant' ? 'bot' : 'user',
-            text: msg.content
-          }))
-      : []
-  );
-
+  const [messages, setMessages] = useState([]);
   const [inputValue, setInputValue] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false); 
 
+  const inputRef = useRef(null);
   const pickerRef = useRef(null);
   const messagesEndRef = useRef(null);
-  const [remainingTime, setRemainingTime] = useState(600); // 600 seconds = 10 min
+
+  // --- STATE FOR REDCAP REDIRECT ---
+  const [postSurveyRedirectUrl, setPostSurveyRedirectUrl] = useState('');
+  const [redirectError, setRedirectError] = useState(false); // To show a fallback message
+
+  const [remainingTime, setRemainingTime] = useState(600); // 10 minutes in seconds
   const [sessionExpired, setSessionExpired] = useState(false);
+
+  const focusInput = () => {
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 0); 
+  };
   
-  // Scroll to latest message
+  // --- PARSE QUERY PARAMETERS ON INITIAL LOAD (for REDCap redirect URL) ---
+  useEffect(() => {
+    const queryParams = new URLSearchParams(window.location.search);
+    const redcapPostUrlFromQuery = queryParams.get('post_survey_url');
+
+    if (redcapPostUrlFromQuery) {
+      // It's good practice to decode, though your test showed it wasn't encoded
+      const decodedUrl = decodeURIComponent(redcapPostUrlFromQuery);
+      setPostSurveyRedirectUrl(decodedUrl);
+      console.log("REDCap Post Survey URL received and set:", decodedUrl);
+    } else {
+      console.error("CRITICAL: REDCap post_survey_url not found in query parameters!");
+      setRedirectError(true); // Set error state to display fallback message later
+    }
+  }, []); // Empty dependency array: run only once on mount
+
+  useEffect(() => {
+    if (initialMessages && initialMessages.length > 0) {
+      const formatted = initialMessages
+        .filter(msg => msg.content && msg.role)
+        .map(msg => ({
+          sender: msg.role === 'assistant' ? 'bot' : 'user',
+          text: msg.content
+        }));
+      setMessages(formatted);
+    }
+    focusInput();
+  }, [initialMessages]); 
+
+  useEffect(() => {
+    if (!isLoading && inputRef.current) {
+        if (!showEmojiPicker) { 
+            focusInput();
+        }
+    }
+  }, [isLoading, showEmojiPicker]);
+
   useEffect(() => {
     if (messagesEndRef.current) {
       requestAnimationFrame(() => {
@@ -43,10 +92,12 @@ export default function ChatInterface({ sessionId, condition, backendCondition, 
     }
   }, [messages]);
 
-  // Detect click outside emoji picker
   useEffect(() => {
     const handleClickOutside = event => {
-      if (pickerRef.current && !pickerRef.current.contains(event.target)) {
+      if (pickerRef.current && !pickerRef.current.contains(event.target) && 
+          inputRef.current && !inputRef.current.contains(event.target) && 
+          event.target?.closest('button[aria-label="Toggle Emoji Picker"]') === null 
+         ) {
         setShowEmojiPicker(false);
       }
     };
@@ -56,113 +107,147 @@ export default function ChatInterface({ sessionId, condition, backendCondition, 
     } else {
       document.removeEventListener('mousedown', handleClickOutside);
     }
-
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [showEmojiPicker]);
 
-  // --- Log the backend condition when the component mounts ---
   useEffect(() => {
     console.log("ChatInterface loaded. Session ID:", sessionId);
-    // This backendCondition prop comes from App.jsx and contains the { avatar: bool, lsm: bool } object
-    console.log("Backend Condition:", backendCondition);
-    console.log("LSM enabled for this session:", backendCondition?.lsm); // Check the 'lsm' key directly
+    console.log("Passed condition string from App.js:", condition);
+    console.log("Backend Condition Object:", backendCondition);
+    console.log("LSM enabled for this session:", backendCondition?.lsm); 
+    console.log("Participant ID:", participantId);
+  }, [sessionId, backendCondition, condition, participantId]); 
 
-  }, [sessionId, backendCondition]); // Effect runs when sessionId or backendCondition props change (mostly once on mount)
-
+  // --- COUNTDOWN TIMER AND SESSION END LOGIC ---
   useEffect(() => {
-    const countdown = setInterval(() => {
+    if (!sessionId) return; // Don't start countdown if sessionID isn't ready
+
+    const countdown = setInterval(() => { 
       setRemainingTime(prev => {
         if (prev <= 1) {
           clearInterval(countdown);
-          setSessionExpired(true);
-          document.body.style.filter = 'grayscale(100%)';
-          setTimeout(() => {
-            window.location.href = "https://redcap.example.com/survey"; // 🔁 Replace with your actual URL
-          }, 2000); // small delay for UX
+          if (!sessionExpired) { // Ensure this block runs only once
+            setSessionExpired(true);
+            document.body.style.filter = 'grayscale(100%)';
+
+            const endSessionFlow = async () => {
+              try {
+                console.log("Timer expired. Attempting to end session:", sessionId);
+                await axios.post(`${apiBaseUrl}/api/session/end`, { sessionId });
+                console.log("Session end signal sent successfully to backend.");
+              } catch (error) {
+                console.error('Failed to signal session end to backend:', error);
+              } finally {
+                // Redirect after a delay, regardless of backend call success
+                setTimeout(() => {
+                  if (postSurveyRedirectUrl) {
+                    console.log("Redirecting to REDCap post-survey:", postSurveyRedirectUrl);
+                    window.location.href = postSurveyRedirectUrl;
+                  } else {
+                    console.error("Cannot redirect: Post-survey URL was not set. Fallback message should be shown.");
+                    // The redirectError state will trigger a message in the UI
+                    setRedirectError(true); // Ensure this is set if URL is missing
+                  }
+                }, 2000); // 2-second delay to allow backend call and give user a moment
+              }
+            };
+            endSessionFlow();
+          }
           return 0;
         }
         return prev - 1;
       });
-    }, 1000); // Tick every second
+    }, 1000);
   
     return () => clearInterval(countdown);
-  }, []);
-  
+  }, [sessionId, apiBaseUrl, postSurveyRedirectUrl, sessionExpired]); // Added sessionExpired to prevent re-runs
 
-  // Send message to backend
   const handleSend = async () => {
-    if (inputValue.trim() === '' || !sessionId || isLoading) return;
+    if (inputValue.trim() === '' || !sessionId || isLoading || sessionExpired) return;
 
     const userMessage = { sender: 'user', text: inputValue };
-    // Add user message to history immediately for responsive UI
     setMessages(prev => [...prev, userMessage]);
 
     const currentInput = inputValue;
     setInputValue('');
-    setShowEmojiPicker(false);
+    
     setIsLoading(true);
+    if (showEmojiPicker) {
+        setShowEmojiPicker(false); 
+    }
 
-    // Add a 'thinking' indicator
     const thinkingMessage = { sender: 'bot-thinking', text: '...' };
     setMessages(prev => [...prev, thinkingMessage]);
 
     try {
-      // --- Send message to the backend ---
       const response = await axios.post(`${apiBaseUrl}/api/session/message`, {
         sessionId,
         message: currentInput
       });
 
-      // --- Place console logs HERE to see the response data including LSM scores ---
       console.log("Message response received:", response.data);
-      // Access the LSM scores directly from the response data
-      console.log("Raw LSM Score for this turn:", response.data.lsmScore);
-      console.log("Smoothed LSM Score after this turn:", response.data.smoothedLsmAfterTurn);
-      // Also log the style profile used for the bot's generation
-      console.log("Bot Style Profile Used (includes prev smoothed LSM):", response.data.styleProfile);
-
+      // console.log("Raw LSM Score for this turn:", response.data.lsmScore); // Optional: keep for debugging
+      // console.log("Smoothed LSM Score after this turn:", response.data.smoothedLsmAfterTurn);
+      // console.log("Bot Style Profile Used (includes prev smoothed LSM):", response.data.styleProfile);
 
       const botMessage = { sender: 'bot', text: response.data.response };
 
-      // Replace thinking indicator with the actual bot message
       setMessages(prev => {
         const newMessages = [...prev];
         const thinkingIndex = newMessages.findIndex(msg => msg.sender === 'bot-thinking');
         if (thinkingIndex > -1) newMessages[thinkingIndex] = botMessage;
-        else newMessages.push(botMessage); // Fallback if thinking message wasn't found for some reason
+        else newMessages.push(botMessage); 
         return newMessages;
       });
 
     } catch (error) {
       console.error('Error sending message:', error);
-      // Log detailed error response if available
-      if (error.response) {
-        console.error('Error response data:', error.response.data);
-        console.error('Error response status:', error.response.status);
-        console.error('Error response headers:', error.response.headers);
-      }
+      // ... (error handling as before) ...
       const fallbackBot = { sender: 'bot', text: 'Oops, something went wrong. Please try again.' };
-       // Replace thinking indicator with the fallback error message
       setMessages(prev => {
         const newMessages = [...prev];
         const thinkingIndex = newMessages.findIndex(msg => msg.sender === 'bot-thinking');
         if (thinkingIndex > -1) newMessages[thinkingIndex] = fallbackBot;
-        else newMessages.push(fallbackBot); // Fallback
+        else newMessages.push(fallbackBot); 
         return newMessages;
       });
     } finally {
-      // Ensure loading is set to false regardless of success or failure
-      setIsLoading(false);
+      setIsLoading(false); 
     }
   };
 
-  // Handle Enter key
   const handleKeyDown = e => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter' && !e.shiftKey && !sessionExpired) { // Prevent send if session expired
       e.preventDefault();
       handleSend();
     }
   };
+
+  // --- UI FOR REDIRECT ERROR ---
+  if (sessionExpired && redirectError && !postSurveyRedirectUrl) {
+    return (
+      <div style={{ 
+          width: '100%', height: '100vh', display: 'flex', 
+          flexDirection: 'column', justifyContent: 'center', alignItems: 'center', 
+          textAlign: 'center', padding: '20px', fontFamily: 'Arial, sans-serif',
+          filter: 'grayscale(100%)' // Keep grayscale if session expired
+      }}>
+        <h2>Thank You!</h2>
+        <p>Your chat session has concluded.</p>
+        <p style={{color: 'red', marginTop: '20px'}}>
+          There was an issue automatically redirecting you to the final survey.
+        </p>
+        <p>
+          Please return to the REDCap tab or window you used for the initial survey,
+          or use the link provided by the research team to complete the post-survey.
+        </p>
+        <p style={{marginTop: '10px'}}>
+          If you continue to have issues, please contact the research coordinator.
+        </p>
+      </div>
+    );
+  }
+
 
   return (
     <div
@@ -175,28 +260,41 @@ export default function ChatInterface({ sessionId, condition, backendCondition, 
         position: 'relative',
         overflow: 'hidden'
       }}
+      onClick={(e) => {
+        const emojiPickerButton = e.target.closest('button[aria-label="Toggle Emoji Picker"]');
+        const sendButton = e.target.closest('button'); 
+
+        if (pickerRef.current && !pickerRef.current.contains(e.target) &&
+            inputRef.current && !inputRef.current.contains(e.target) &&
+            !emojiPickerButton && 
+            !(sendButton && sendButton.textContent?.match(/Send|Sending.../)) 
+            ) {
+          if (!isLoading && !showEmojiPicker && !sessionExpired) { 
+            focusInput();
+          }
+        }
+      }}
     >
-{/* Countdown Timer just above input */}
-<div className="fixed bottom-[80px] w-full flex justify-center z-40">
-  <div className="bg-white/80 backdrop-blur-sm px-4 py-1 rounded-full text-gray-700 text-sm font-mono shadow">
-    {sessionExpired
-      ? "Session ended"
-      : `Time left: ${Math.floor(remainingTime / 60)
-          .toString()
-          .padStart(2, '0')}:${(remainingTime % 60).toString().padStart(2, '0')}`}
-  </div>
-</div>
+      {/* Countdown Timer */}
+      <div className="fixed bottom-[80px] w-full flex justify-center z-40">
+        <div className="bg-white/80 backdrop-blur-sm px-4 py-1 rounded-full text-gray-700 text-sm font-mono shadow">
+          {sessionExpired
+            ? "Chat session ended. Preparing to redirect..."
+            : `Time left: ${Math.floor(remainingTime / 60)
+                .toString()
+                .padStart(2, '0')}:${(remainingTime % 60).toString().padStart(2, '0')}`}
+        </div>
+      </div>
 
       {/* Messages */}
-      {/* Adjusted positioning slightly to accommodate avatar space */}
-      <div className="absolute bottom-[48vh] left-1/2 transform -translate-x-1/2 w-full max-w-3xl flex flex-col items-center px-2 space-y-2 overflow-y-auto h-[calc(100vh - 53vh - 80px)] pb-4"> {/* Added max-w-3xl and height/overflow */}
+      <div className="absolute bottom-[48vh] left-1/2 transform -translate-x-1/2 w-full max-w-3xl flex flex-col items-center px-2 space-y-2 overflow-y-auto h-[calc(100vh - 53vh - 80px)] pb-4">
         {messages.map((msg, idx) => {
           if (msg.sender === 'bot-thinking') {
+            // ... (thinking message as before) ...
             return (
               <div
                 key={`thinking-${idx}`}
-                // Use left alignment for bot thinking indicator
-                className="max-w-xs sm:max-w-sm md:max-w-md px-4 py-2 rounded-2xl bg-[#3B3B3B] text-[#ffffff] self-start animate-pulse" // Removed specific margins, added self-start
+                className="max-w-xs sm:max-w-sm md:max-w-md px-4 py-2 rounded-2xl bg-[#3B3B3B] text-[#ffffff] self-start animate-pulse" 
               >
                 <div className="h-4 bg-gray-600 rounded w-3/4 mb-1"></div>
                 <div className="h-4 bg-gray-600 rounded w-1/2"></div>
@@ -204,9 +302,10 @@ export default function ChatInterface({ sessionId, condition, backendCondition, 
             );
           }
           return (
+            // ... (regular message as before) ...
             <div
               key={idx}
-              className={`max-w-xs sm:max-w-sm md:max-w-md px-4 py-2 rounded-2xl whitespace-pre-wrap ${
+              className={`w-xl sm:max-w-sm md:max-w-md px-4 py-2 rounded-2xl whitespace-pre-wrap ${
                 msg.sender === 'bot'
                   ? 'bg-[#3B3B3B] text-[#ffffff] self-start'
                   : 'bg-[#DEDEDE] text-[#222222] self-end'
@@ -224,87 +323,87 @@ export default function ChatInterface({ sessionId, condition, backendCondition, 
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Avatars + Table */}
-      {/* Ensure these are positioned correctly relative to the bottom */}
+      {/* Avatars */}
       {!isNoAvatar && (
         <>
-          <div className="fixed bottom-20 w-full flex justify-center items-end z-40 pointer-events-none"> {/* Added pointer-events-none */}
+          <div className="fixed bottom-20 w-full flex justify-center items-end z-30 pointer-events-none">
             <img
               src={kagamiAvatar}
               alt="Kagami Avatar"
-              className="h-[45vh] max-h-[550px] w-auto object-contain mr-[-5rem]" // Adjusted margin slightly
+              className="h-[45vh] max-h-[550px] w-auto object-contain mr-[-5rem]" 
             />
             <img
-              src={userAvatar}
+              src={userDisplayAvatar} // Use the determined user avatar
               alt="User Avatar"
-              className="h-[45vh] max-h-[550px] w-auto object-contain ml-[-5rem]" // Adjusted margin slightly
+              className="h-[45vh] max-h-[550px] w-auto object-contain ml-[-5rem]" 
             />
           </div>
         </>
       )}
 
-      {/* Chat Input */}
-      <div className="fixed bottom-0 w-full flex justify-center p-4 z-50">
-        <div className="flex w-full max-w-3xl items-center bg-white rounded-full shadow-md px-4 py-2"> {/* Added max-w-3xl */}
-        <div className="relative mr-2 hidden sm:block">
-          <button
-            onClick={() => setShowEmojiPicker(prev => !prev)}
+      {/* Chat Input - Disable if sessionExpired */}
+      <div className={`fixed bottom-0 w-full flex justify-center p-4 z-50 ${sessionExpired ? 'opacity-50 pointer-events-none' : ''}`}>
+        <div className="flex w-full max-w-3xl items-center bg-white rounded-full shadow-md px-4 py-2"> 
+          <div className="relative mr-2 hidden sm:block">
+            <button
+            onClick={(e) => {
+              if (sessionExpired) return;
+              e.stopPropagation(); 
+              setShowEmojiPicker(prev => !prev);
+            }}
             className="block"
-            aria-label="Toggle Emoji Picker"
-          >
-            <img
-              src={smileIcon}
-              alt="Emoji Picker Icon"
-              className="w-6 h-6"
-            />
-          </button>
-            {showEmojiPicker && (
+              aria-label="Toggle Emoji Picker"
+              disabled={sessionExpired}
+            >
+              <img src={smileIcon} alt="Emoji Picker Icon" className="w-6 h-6" />
+            </button>
+            {showEmojiPicker && !sessionExpired && ( // Also hide picker if session expired
               <div
                 ref={pickerRef}
-                // Adjusted positioning to be above the input bar
                 className="absolute bottom-full mb-6 left-0 z-50 p-2 bg-white rounded-xl shadow-lg border border-gray-200 w-64 max-h-80 overflow-y-auto"
+                onClick={(e) => e.stopPropagation()} 
               >
-                {/* Ensure EmojiPicker children handle interaction correctly */}
-                <EmojiPicker.Root onEmojiSelect={({ emoji }) => setInputValue(prev => prev + emoji)}>
-                  <EmojiPicker.Search className="p-2 border-b w-full" /> {/* Added w-full */}
-                  <EmojiPicker.Viewport className="overflow-y-auto flex-grow"> {/* Added flex-grow */}
+                <EmojiPicker.Root onEmojiSelect={({ emoji }) => {
+                    setInputValue(prev => prev + emoji);
+                }}>
+                  <EmojiPicker.Search className="p-2 border-b w-full" /> 
+                  <EmojiPicker.Viewport className="overflow-y-auto flex-grow"> 
                     <EmojiPicker.Loading>Loading…</EmojiPicker.Loading>
                     <EmojiPicker.Empty>No emoji found.</EmojiPicker.Empty>
-                    <EmojiPicker.List className="p-2 text-2xl grid gap-1" /> {/* Use grid for layout */}
+                    <EmojiPicker.List className="p-2 text-2xl grid gap-1" /> 
                   </EmojiPicker.Viewport>
                 </EmojiPicker.Root>
               </div>
             )}
           </div>
           <input
+            ref={inputRef}
             type="text"
             className="flex-1 border-none focus:outline-none text-lg"
-            placeholder={isLoading ? "Sending..." : "Type a message..."}
+            placeholder={isLoading ? "Sending..." : (sessionExpired ? "Session ended." : "Type a message...")}
             value={inputValue}
             onChange={e => setInputValue(e.target.value)}
             onKeyDown={handleKeyDown}
-            disabled={isLoading}
+            disabled={isLoading || sessionExpired}
+            onClick={(e) => e.stopPropagation()} 
           />
           <button
-            onClick={handleSend}
-            disabled={!inputValue.trim() || isLoading}
+            onClick={(e) => {
+                if (sessionExpired) return;
+                e.stopPropagation(); 
+                handleSend();
+            }}
+            disabled={!inputValue.trim() || isLoading || sessionExpired}
             className={`ml-2 rounded-full px-4 py-2 transition ${
-              !inputValue.trim() || isLoading
+              !inputValue.trim() || isLoading || sessionExpired
                 ? 'bg-gray-400 cursor-not-allowed'
-                : 'bg-green-500 hover:bg-green-600 text-white'
+                : 'bg-gray-600 hover:bg-gray-700 text-white'
             }`}
           >
             {isLoading ? 'Sending...' : 'Send'}
           </button>
         </div>
       </div>
-      {/* Optional End Session Button (Add this if you need one) */}
-      {/* <button
-         onClick={onEndSession}
-         className="fixed top-4 right-4 z-50 bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded"
-      >
-        End Session
-      </button> */}
     </div>
   );
 }

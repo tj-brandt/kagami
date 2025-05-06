@@ -13,7 +13,9 @@ print(f"Attempting to download NLTK data to: {NLTK_DATA_PATH}")
 # Download 'punkt' tokenizer
 try:
     nltk.data.find('tokenizers/punkt')
-    print("NLTK 'punkt' tokenizer already found.")
+    print("✅ NLTK 'punkt' found.")
+except LookupError:
+    print("⛔ 'punkt' not found — something went wrong with the download.")
 except LookupError:
     print("Downloading NLTK 'punkt' tokenizer...")
     try:

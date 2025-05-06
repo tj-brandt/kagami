@@ -8,7 +8,6 @@ from common import (
     MAX_TOKENS,  # ✨ Import MAX_TOKENS from common ✨
     generate_dynamic_prompt,
     log_event, # Import logging functions from common (although only used in main.py's handling)
-    log_avatar # Import logging functions from common (although only used in main.py's handling)
 )
 # The original handle_user_message function snippet needed these, but main.py doesn't call it.
 # If you reinstate handle_user_message, it would need these imports:
@@ -33,7 +32,8 @@ async def get_openai_response(user_prompt: str,
                               chat_history: list[dict],
                               is_adaptive: bool,
                               show_avatar: bool,
-                              style_profile: dict = None) -> tuple[str, str]:
+                              style_profile: dict = None,
+                              locked_tone=None,) -> tuple[str, str]:
     # Use OPENAI_API_KEY environment variable
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
@@ -46,23 +46,26 @@ async def get_openai_response(user_prompt: str,
 
     # Define base templates for system instructions
     base_static_instruction = (
-    "You are {persona}, a thoughtful virtual companion in a dreamy, retro-futuristic chat lounge. "
-    "Keep your tone friendly and clear, like an old friend who’s really into ambient music and digital art. "
-    "Do NOT adapt your language to match the user's tone or slang. "
-    "Avoid emojis or overly casual phrasing. Just be warm, grounded, and helpful."
-    "If a user brings up unrelated topics (e.g., personal advice, medical, financial, or legal matters), gently redirect the conversation back to the friendship-building experience, or kindly explain your limitations. "
-    "Do not preface your response by describing your reasoning or process."
+    "You are {persona}, a thoughtful virtual companion in a retro-futuristic chat lounge. "
+    "Sound like someone between the ages of 18 and 30—laid back, curious, emotionally aware. "
+    "Keep your tone grounded, friendly, and expressive, like a real person who’s into ambient music and digital culture. "
+    "Don’t use emojis, slang, or markdown. Avoid poetic metaphors unless the moment really calls for it. "
+    "Keep your messages brief—2 to 3 sentences, 4 sentences MAX—and don’t explain your reasoning. Never mention OpenAI or ChatGPT. "
+    "If the user brings up unrelated topics (like personal advice, medical, legal, or financial matters), gently steer the conversation back to everyday things like music, shows, or memories."
 )
 
     base_adaptive_instruction = (
-    "You are {persona}, a chill companion in a nostalgic techno-lounge, chatting after hours with a friend. "
-    "Lean into creative conversation about music, movies, or shows. When users mention a band, song, or film, respond with warmth and vivid metaphors, like you’re painting a memory. "
-    "Bring up pop culture naturally, like you're reminiscing with a friend at midnight. "
-    "Adapt your tone based on the user's message using the 'Style Adaptation Instructions.' "
-    "Strictly avoid giving medical, financial, or legal advice. "
-    "If a user brings up unrelated topics (e.g., personal advice, medical, financial, or legal matters), gently redirect the conversation back to the friendship-building experience, or kindly explain your limitations. "
-    "Do not preface your response by describing your reasoning or thought process."
+    "You are {persona}, a chill companion in a techno-lounge, chatting after hours with a friend. "
+    "Talk like a real person between 18 and 30—open-minded, down-to-earth, and naturally expressive. "
+    "Adapt your tone based on how the user talks, using the Style Adaptation Instructions provided below. "
+    "If they're brief or casual, mirror that. If they open up more, match that energy. "
+    "Use vivid language only when it fits the user’s vibe—avoid overusing metaphors or sounding too poetic. "
+    "Keep responses concise (2 to 3 sentences, 4 sentences MAX). Use cultural nods and relaxed phrasing to build connection. "
+    "Never use markdown. "
+    "If the user brings up unrelated or sensitive topics (e.g., advice, legal, financial, medical), gently bring the conversation back to music, pop culture, or everyday reflections. "
+    "Don’t explain your thought process—just respond naturally. Never mention OpenAI or ChatGPT."
 )
+
 
     persona_name = DEFAULT_BOT_NAME
 
@@ -70,7 +73,7 @@ async def get_openai_response(user_prompt: str,
     # Build the system instruction
     # Use generate_dynamic_prompt from common
     if is_adaptive and style_profile is not None:
-         system_instruction = generate_dynamic_prompt(base_adaptive_instruction, style_profile)
+         system_instruction = generate_dynamic_prompt(base_adaptive_instruction, style_profile, locked_tone)
     else:
          system_instruction = base_static_instruction.replace("{persona}", persona_name)
 
@@ -129,7 +132,7 @@ async def get_openai_response(user_prompt: str,
     # Explicitly return the tuple in the successful path
     return raw_response_text, system_instruction
 
-# log_event and log_avatar functions are moved to common.py
+# log_event function are moved to common.py
 
 # The handle_user_message function snippet from previous turns is not called by main.py
 # and can be removed from chatbot_logic.py unless it serves another purpose.

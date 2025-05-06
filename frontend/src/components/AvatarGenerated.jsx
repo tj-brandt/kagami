@@ -18,18 +18,38 @@ export default function AvatarGenerated({ onNext, sessionId }) {
     const fetchSessionInfo = async () => {
       try {
         if (sessionId) {
-          const res = await axios.get(`${API_BASE_URL}/api/session/${sessionId}`);
+          // Assuming the backend endpoint /api/session/:sessionId returns an object
+          // with a `generated_avatars` array if they exist.
+          // This part of the code seems to fetch session details, which might include
+          // previously generated avatars. If this endpoint doesn't exist or doesn't
+          // return `generated_avatars`, this `setGeneratedAvatarsObjects` call
+          // might not behave as expected, but it's part of your original code.
+          // The key is that any URLs fetched here should be fully qualified if they are to be displayed.
+          const res = await axios.get(`${API_BASE_URL}/api/session/${sessionId}`); 
           if (res.data.generated_avatars && res.data.generated_avatars.length > 0) {
-            const avatars = res.data.generated_avatars;
+            // IMPORTANT: Ensure that if you are loading avatars from a previous session state
+            // via this mechanism, their URLs are also fully qualified or handled correctly
+            // by `currentAvatarSrc` logic. The `handleGenerate` function makes newly generated URLs
+            // fully qualified.
+            const avatars = res.data.generated_avatars.map(avatar => {
+                // If URLs from backend are relative (e.g., /static/...), make them absolute
+                if (avatar.url && !avatar.url.startsWith('http') && !avatar.url.startsWith('data:')) {
+                    return { ...avatar, url: `${API_BASE_URL}${avatar.url}` };
+                }
+                return avatar;
+            });
             setGeneratedAvatarsObjects(avatars);
             setCurrentIndex(avatars.length - 1);
           }
         }
       } catch (err) {
-        console.error('Failed to fetch session info:', err);
+        console.error('Failed to fetch session info (this might be okay if no prior avatars):', err);
+        // Not necessarily a critical error if the session is new or has no prior generated avatars.
       }
     };
-    fetchSessionInfo();
+    if (sessionId) { // Only fetch if sessionId is available
+        fetchSessionInfo();
+    }
   }, [sessionId]);
 
   const handleGenerate = async () => {
@@ -53,8 +73,14 @@ export default function AvatarGenerated({ onNext, sessionId }) {
       const currentPrompt = promptInput.trim();
       const requestBody = { prompt: currentPrompt, sessionId };
       const res = await axios.post(`${API_BASE_URL}/api/avatar/generate`, requestBody);
-      const newAvatarUrl = `${API_BASE_URL}${res.data.url}`;
-      const newAvatarObject = { url: newAvatarUrl, prompt: currentPrompt };
+      
+      // res.data.url from backend is relative, e.g., /static/generated/xyz.png
+      // Prepend API_BASE_URL to make it a full URL.
+      const newAvatarUrl = res.data.url.startsWith('http') ? res.data.url : `${API_BASE_URL}${res.data.url}`;
+      
+      // Use res.data.prompt as the source of truth for the prompt associated with the generated image.
+      const newAvatarObject = { url: newAvatarUrl, prompt: res.data.prompt }; 
+
       setGeneratedAvatarsObjects(prev => {
         const updated = [...prev, newAvatarObject];
         setCurrentIndex(updated.length - 1);
@@ -63,7 +89,7 @@ export default function AvatarGenerated({ onNext, sessionId }) {
       setPromptInput('');
     } catch (err) {
       console.error('Avatar generation failed:', err);
-      if (err.response?.status === 400 && err.response?.data?.detail === "Maximum avatar generations reached for this session.") {
+      if (err.response?.status === 400 && err.response?.data?.detail?.includes("Maximum avatar generations reached")) {
         setError("You've reached the maximum number of avatar generations!");
       } else if (err.response?.status === 404 && err.response?.data?.detail === "Session not found") {
         setError("Your session was not found. Please try starting over.");
@@ -88,24 +114,33 @@ export default function AvatarGenerated({ onNext, sessionId }) {
   };
 
   const handleConfirm = () => {
-    if (generatedAvatarsObjects.length > 0) {
-      onNext(generatedAvatarsObjects[currentIndex].url);
+    if (generatedAvatarsObjects.length > 0 && generatedAvatarsObjects[currentIndex]) { // Check if current index is valid
+      const currentAvatar = generatedAvatarsObjects[currentIndex];
+      // Pass an object with url and prompt
+      onNext({ url: currentAvatar.url, prompt: currentAvatar.prompt }); 
     } else {
-      console.warn("Confirm clicked but no avatars generated.");
+      console.warn("Confirm clicked but no avatars generated or current index is invalid.");
+      // onNext(null); // Or handle appropriately if you want to signal no avatar was confirmed
     }
   };
 
   let currentAvatarSrc = kagamiPlaceholder;
-  if (generatedAvatarsObjects.length > 0) {
+  // Ensure generatedAvatarsObjects[currentIndex] exists before trying to access its properties
+  if (generatedAvatarsObjects.length > 0 && generatedAvatarsObjects[currentIndex]) { 
     const rawUrl = generatedAvatarsObjects[currentIndex].url || "";
-    if (rawUrl.startsWith("http")) {
+    // The URLs stored in generatedAvatarsObjects (from fetchSessionInfo or handleGenerate)
+    // should already be fully qualified (http... or data:...).
+    // The check for `rawUrl.length > 100` for base64 is a bit arbitrary and might not be robust.
+    // It's better to rely on the URL format itself.
+    if (rawUrl.startsWith("http") || rawUrl.startsWith("data:")) {
       currentAvatarSrc = rawUrl;
-    } else if (rawUrl.length > 100) {
-      currentAvatarSrc = `data:image/png;base64,${rawUrl}`;
-    } else {
-      console.warn("Avatar URL is invalid format:", rawUrl);
+    } else if (rawUrl) { // If it's not empty but not a recognized format
+      console.warn("Avatar URL is in an unexpected format:", rawUrl, "Attempting to use directly.");
+      currentAvatarSrc = rawUrl; // Or try to prepend API_BASE_URL if it looks relative
     }
+    // If rawUrl is empty, currentAvatarSrc remains kagamiPlaceholder
   }
+
 
   return (
     <div
@@ -122,30 +157,34 @@ export default function AvatarGenerated({ onNext, sessionId }) {
 
       {/* Avatar display + loading caption */}
       <div className="flex items-end justify-center gap-10 mb-0">
-        <button onClick={handlePrev} aria-label="Previous Avatar">
+        <button onClick={handlePrev} aria-label="Previous Avatar" disabled={generatedAvatarsObjects.length <=1 || loading}>
           <img
             src={arrowImg}
             alt="Previous"
-            className="w-10 h-10 transform hover:scale-110 transition relative -top-40"
+            className="w-10 h-10 transform hover:scale-110 transition relative -top-40 disabled:opacity-50"
           />
         </button>
 
         <div className="flex flex-col items-center">
           <img
             src={currentAvatarSrc}
-            alt="Avatar"
+            alt={currentAvatarSrc === kagamiPlaceholder ? "Kagami Placeholder" : (generatedAvatarsObjects[currentIndex]?.prompt || "Generated Avatar")}
             className={`w-96 h-auto object-contain ${loading ? 'animate-pulse' : ''}`}
+            onError={(e) => {
+                e.target.onerror = null; // prevent infinite loop
+                e.target.src = kagamiPlaceholder; // Fallback to placeholder
+            }}
           />
           {loading && (
             <div className="mt-2 text-sm text-sky-200 animate-pulse">Creating your avatar...</div>
           )}
         </div>
 
-        <button onClick={handleNext} aria-label="Next Avatar">
+        <button onClick={handleNext} aria-label="Next Avatar" disabled={generatedAvatarsObjects.length <=1 || loading}>
           <img
             src={arrowImg}
             alt="Next"
-            className="w-10 h-10 hover:scale-110 rotate-180 transition relative -top-40"
+            className="w-10 h-10 hover:scale-110 rotate-180 transition relative -top-40 disabled:opacity-50"
           />
         </button>
       </div>
@@ -165,6 +204,7 @@ export default function AvatarGenerated({ onNext, sessionId }) {
             placeholder="Panda with sunglasses"
             className="flex-1 border-none focus:outline-none text-lg"
             disabled={generatedAvatarsObjects.length >= MAX_GENERATIONS || loading}
+            onKeyPress={(e) => { if (e.key === 'Enter' && !loading && promptInput.trim() && generatedAvatarsObjects.length < MAX_GENERATIONS) handleGenerate(); }}
           />
           <button
             onClick={handleGenerate}
@@ -178,7 +218,7 @@ export default function AvatarGenerated({ onNext, sessionId }) {
             {loading ? (
               <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"></path>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
             ) : (
               '✨'
@@ -187,7 +227,7 @@ export default function AvatarGenerated({ onNext, sessionId }) {
         </div>
 
         <div className="text-center text-gray-300 mt-2 text-sm">
-          {`${MAX_GENERATIONS - generatedAvatarsObjects.length}/${MAX_GENERATIONS} Avatar Generations Remain`}
+          {`${Math.max(0, MAX_GENERATIONS - generatedAvatarsObjects.length)}/${MAX_GENERATIONS} Avatar Generations Remain`}
         </div>
         {error && (
           <div className="text-center text-red-500 mt-2 text-sm">
