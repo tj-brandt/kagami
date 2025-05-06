@@ -8,7 +8,8 @@ import kagamiLogo from './assets/kagami.png'; // Import logo asset
 import bgImage from './assets/bg.png'; // Background for intro phase asset
 
 // --- Constants ---
-const API_BASE_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000'; // Define API_BASE_URL
+const rawApiBaseUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
+const API_BASE_URL = rawApiBaseUrl.replace(/\/$/, ''); // 
 
 const conditionDetails = { // Define conditionDetails
   avatar_premade_static: { avatar: true, lsm: false }, 
