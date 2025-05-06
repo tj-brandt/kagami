@@ -9,10 +9,11 @@ venv/
 # poetry.lock
 
 # Backend specific
-backend/.env # More specific for backend .env if you have one
+backend/.env
 backend/nltk_data/
-backend/experiment_logs/ # Matches your LOG_DIR
-backend/service_account.json # CRITICAL: For Google Cloud credentials
+backend/experiment_logs/ 
+backend/service_account.json
+backend/credentials.json 
 # backend/credentials.json # You had this, if it's different from service_account.json and sensitive, keep it
 
 # Node / Frontend specific
