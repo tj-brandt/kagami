@@ -8,7 +8,7 @@ import bird from '../assets/avatars/bird.png';
 import elephant from '../assets/avatars/elephant.png';
 import arrowImg from '../assets/arrow.png';
 import * as THREE from 'three'; // For Vanta
-import FOG from 'vanta/dist/vanta.fog.min'; // For Vanta
+import FOG from 'vanta/src/vanta.fog';
 
 
 const avatars = [
