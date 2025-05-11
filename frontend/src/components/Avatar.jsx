@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import backgroundChat from '../assets/background_chat.png';
+import React, { useState, useEffect, useRef } from 'react'; // Added useRef
+// import backgroundChat from '../assets/background_chat.png'; // Vanta will be the background
 import frog from '../assets/avatars/frog.png';
 import panda from '../assets/avatars/panda.png';
 import cat from '../assets/avatars/cat.png';
@@ -7,7 +7,8 @@ import capybara from '../assets/avatars/capybara.png';
 import bird from '../assets/avatars/bird.png';
 import elephant from '../assets/avatars/elephant.png';
 import arrowImg from '../assets/arrow.png';
-
+import * as THREE from 'three'; // For Vanta
+import FOG from 'vanta/dist/vanta.fog.min'; // For Vanta
 
 
 const avatars = [
@@ -23,73 +24,94 @@ const avatars = [
 const SLIDE_ANIMATION_DURATION_MS = 400;
 
 export default function AvatarSelection({ onNext }) {
+  const vantaRef = useRef(null); // Ref for Vanta
   const [currentIndex, setCurrentIndex] = useState(0);
   const [slideDirection, setSlideDirection] = useState(null); // 'left', 'right', or null
   const [animationKey, setAnimationKey] = useState(0); // To force re-render/re-mount
   const [isBouncing, setIsBouncing] = useState(true); // Control bounce animation
 
+  // Vanta.js Background Effect
+  useEffect(() => {
+    let vantaEffect = null;
+
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches && vantaRef.current) {
+      vantaEffect = FOG({
+        el: vantaRef.current,
+        THREE: THREE,
+        mouseControls: true,
+        touchControls: true,
+        gyroControls: false,
+        minHeight: 200.00,
+        minWidth: 200.00,
+        highlightColor: 0xffffff,
+        midtoneColor: 0xe1e1e1,
+        lowlightColor: 0xc5c5c5,
+        baseColor: 0xffffff, // Consistent base color
+        blurFactor: 0.58,
+        speed: 0.10
+      });
+    }
+
+    return () => {
+      if (vantaEffect) vantaEffect.destroy();
+    };
+  }, []); // Empty dependency array ensures this runs once on mount and cleans up on unmount
+
   // Effect to re-enable bouncing after the slide animation completes
   useEffect(() => {
-    // Only run this logic if a slide animation was triggered (key > 0)
     if (animationKey > 0) {
-      // Disable bouncing immediately when the key changes (it was set to false in handlers)
-      // Set a timer to re-enable bouncing after the slide duration
       const timer = setTimeout(() => {
         setIsBouncing(true);
-        setSlideDirection(null); // Reset slide direction after animation finishes
+        setSlideDirection(null); 
       }, SLIDE_ANIMATION_DURATION_MS);
-
-      // Cleanup function to clear the timer if the component unmounts
-      // or if the key changes again before the timer fires
       return () => clearTimeout(timer);
     }
-     // Note: No dependency array change needed here, it correctly depends on animationKey
-  }, [animationKey]); // Re-run when animationKey changes
+  }, [animationKey]); 
 
   const handleNext = () => {
-    setIsBouncing(false); // Stop bouncing
-    setSlideDirection('right'); // Set slide direction
-    setAnimationKey((prevKey) => prevKey + 1); // Trigger remount/slide animation
-    // It's often slightly better to update the index *after* state changes
-    // that affect the *new* element's rendering, though React batches updates.
+    setIsBouncing(false); 
+    setSlideDirection('right'); 
+    setAnimationKey((prevKey) => prevKey + 1); 
     setCurrentIndex((prev) => (prev + 1) % avatars.length);
   };
 
   const handlePrev = () => {
-    setIsBouncing(false); // Stop bouncing
-    setSlideDirection('left'); // Set slide direction
-    setAnimationKey((prevKey) => prevKey + 1); // Trigger remount/slide animation
+    setIsBouncing(false); 
+    setSlideDirection('left'); 
+    setAnimationKey((prevKey) => prevKey + 1); 
     setCurrentIndex((prev) => (prev - 1 + avatars.length) % avatars.length);
   };
 
   const handleConfirm = () => {
     const selectedAvatar = avatars[currentIndex];
-    onNext(selectedAvatar.imgsrc); // Pass the IMAGE URL, not an object or id
+    onNext(selectedAvatar.imgsrc); 
   };
 
-  // Determine the classes dynamically
   const getAvatarClasses = () => {
     let classes = 'w-96 h-auto object-contain';
     if (isBouncing) {
-      classes += ' animate-bounceSlow'; // Add bounce if state is true
+      classes += ' animate-bounceSlow'; 
     } else if (slideDirection === 'left') {
-      classes += ' animate-slideLeftSmall'; // Add slide left if applicable (and not bouncing)
+      classes += ' animate-slideLeftSmall'; 
     } else if (slideDirection === 'right') {
-      classes += ' animate-slideRightSmall'; // Add slide right if applicable (and not bouncing)
+      classes += ' animate-slideRightSmall'; 
     }
-    // If !isBouncing and slideDirection is null (during the brief moment before timeout finishes),
-    // no animation class might be applied, which is fine.
     return classes;
   };
 
 
   return (
     <div
-      className="w-screen h-screen bg-cover bg-center flex flex-col items-center justify-between relative"
-      style={{ backgroundImage: `url(${backgroundChat})` }}
+      ref={vantaRef} // Apply vantaRef here
+      id="vanta-bg"   // Optional: if you have CSS targeting this
+      className="w-screen h-screen flex flex-col items-center justify-between relative" // Removed bg-cover, bg-center
+      style={{
+        // backgroundImage: `url(${backgroundChat})`, // Removed: Vanta will be the background
+        overflow: 'hidden' // Good practice for Vanta containers
+      }}
     >
       {/* Top Text */}
-      <div className="mt-8 text-center text-2xl font-semibold bg-gray-700 text-white px-6 py-2 rounded-full">
+      <div className="mt-8 text-center text-2xl font-semibold bg-gray-700 text-white px-6 py-2 rounded-full z-10"> {/* Added z-10 */}
         Select your avatar!
       </div>
 
@@ -97,7 +119,7 @@ export default function AvatarSelection({ onNext }) {
       <div className="flex-1" />
 
       {/* Arrows and Avatar */}
-      <div className="flex items-end justify-center gap-10 mb-0">
+      <div className="flex items-end justify-center gap-10 mb-0 z-10"> {/* Added z-10 */}
           <button onClick={handlePrev} aria-label="Previous Avatar">
         <img
           src={arrowImg}
@@ -107,11 +129,10 @@ export default function AvatarSelection({ onNext }) {
         </button>
 
         <img
-          key={animationKey} // Force remount using the key
+          key={animationKey} 
           src={avatars[currentIndex].imgsrc}
           alt={avatars[currentIndex].label}
-          className={getAvatarClasses()} // Apply classes based on state
-          // No onAnimationEnd needed here, timing is handled by useEffect/setTimeout
+          className={getAvatarClasses()} 
         />
 
         <button onClick={handleNext} aria-label="Next Avatar">
@@ -124,7 +145,7 @@ export default function AvatarSelection({ onNext }) {
       </div>
 
       {/* Confirm Button */}
-      <div className="mb-10">
+      <div className="mb-10 z-10"> {/* Added z-10 */}
         <button
           onClick={handleConfirm}
           className="bg-white text-gray-600 px-6 py-3 rounded-full hover:bg-gray-300 transition"
@@ -135,4 +156,3 @@ export default function AvatarSelection({ onNext }) {
     </div>
   );
 }
-

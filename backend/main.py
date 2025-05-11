@@ -138,7 +138,7 @@ def generate_natural_greeting():
                        "like a Studio Ghibli scene just before something magical happens.",
                        "like a faded Polaroid of a summer you almost remember."
                    ]},
-        "energetic": {"feelings": ["energetic", "bright", "pumped", "charged", "awake"],
+        "energetic": {"feelings": ["energetic", "exciting", "spirited", "vibrant", "awake"],
                       "references": [
                           "like hitting a perfect combo in DDR.",
                           "like when your favorite Charli XCX track kicks in at full volume.",

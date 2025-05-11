@@ -5,7 +5,6 @@ import ChatInterface from './components/ChatInterface'; // Import ChatInterface 
 import axios from 'axios'; // Import axios
 import AvatarGenerated from './components/AvatarGenerated'; // Assuming this is for Generated Selection
 import kagamiLogo from './assets/kagami.png'; // Import logo asset
-import bgImage from './assets/bg.png'; // Background for intro phase asset
 
 // --- Constants ---
 const rawApiBaseUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
@@ -379,9 +378,7 @@ function App() {
                   showIntroBackground ? 'opacity-100' : 'opacity-0'
               }`}
               style={{
-                  backgroundImage: `url(${bgImage})`, 
-                  backgroundSize: 'cover',
-                  backgroundPosition: 'center',
+                backgroundColor: 'white',
               }}
           />
 

@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import kagamiAvatar from '../assets/avatars/kagami.png';
-import backgroundImage from '../assets/background_chat.png';
 import axios from 'axios';
-import smileIcon from '../assets/smile.png'; // Adjust path if needed
-import { EmojiPicker } from 'frimousse'; // Make sure this library is installed
+import smileIcon from '../assets/smile.png';
+import { EmojiPicker } from 'frimousse';
+import * as THREE from 'three';
+import FOG from 'vanta/dist/vanta.fog.min';
 
 export default function ChatInterface({ 
   sessionId, 
@@ -13,9 +14,36 @@ export default function ChatInterface({
   selectedAvatarUrl,  // URL for premade avatar
   apiBaseUrl, 
   initialMessages, 
-  participantId,      // Passed as a prop
-  // onEndSession // This prop might not be strictly needed if redirect is handled here
+  participantId       // Passed as a prop
+  // onEndSession // Optional
 }) {
+  const vantaRef = useRef(null);
+
+  useEffect(() => {
+    let vantaEffect = null;
+
+    if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches && vantaRef.current) {
+      vantaEffect = FOG({
+        el: vantaRef.current,
+        THREE: THREE,
+        mouseControls: true,
+        touchControls: true,
+        gyroControls: false,
+        minHeight: 200.00,
+        minWidth: 200.00,
+        highlightColor: 0xffffff,
+        midtoneColor: 0xe1e1e1,
+        lowlightColor: 0xc5c5c5,
+        baseColor: 0xffffff,
+        blurFactor: 0.58,
+        speed: 0.10
+      });
+    }
+
+    return () => {
+      if (vantaEffect) vantaEffect.destroy();
+    };
+  }, []);
   const conditionString = String(condition || ''); 
   const isGenerated = conditionString.includes('generated');
   // const isPregenerated = conditionString.includes('premade'); // Not strictly needed if userAvatar logic covers it
@@ -250,16 +278,15 @@ export default function ChatInterface({
 
 
   return (
-    <div
-      style={{
-        backgroundImage: `url(${backgroundImage})`,
-        backgroundSize: 'cover',
-        backgroundPosition: 'center',
-        width: '100%',
-        height: '100vh',
-        position: 'relative',
-        overflow: 'hidden'
-      }}
+  <div
+    ref={vantaRef}
+    id="vanta-bg"
+    style={{
+      width: '100%',
+      height: '100vh',
+      position: 'relative',
+      overflow: 'hidden'
+    }}
       onClick={(e) => {
         const emojiPickerButton = e.target.closest('button[aria-label="Toggle Emoji Picker"]');
         const sendButton = e.target.closest('button'); 
