@@ -4,7 +4,7 @@ import axios from 'axios';
 import smileIcon from '../assets/smile.png';
 import { EmojiPicker } from 'frimousse';
 import * as THREE from 'three';
-import FOG from 'vanta/src/vanta.fog';
+import FOG from 'vanta/dist/vanta.fog.min.js';
 
 export default function ChatInterface({ 
   sessionId, 

@@ -4,7 +4,7 @@ import kagamiPlaceholder from '../assets/avatars/kagami.png'; // Default kagami 
 import axios from 'axios';
 import arrowImg from '../assets/arrow.png';
 import * as THREE from 'three'; // For Vanta
-import FOG from 'vanta/src/vanta.fog';
+import FOG from 'vanta/dist/vanta.fog.min.js';
 
 const API_BASE_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000').replace(/\/$/, '');
 const MAX_GENERATIONS = 5;
