@@ -11,6 +11,7 @@ import cat from './assets/avatars/cat.png';
 import capybara from './assets/avatars/capybara.png';
 import bird from './assets/avatars/bird.png';
 import elephant from './assets/avatars/elephant.png';
+import kagami from './assets/avatars/kagami.png';
 
 // --- Constants ---
 const rawApiBaseUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
@@ -50,10 +51,6 @@ function App() {
     // --- Logging Function (Wrapped in useCallback) ---
     const logFrontendEvent = useCallback(async (eventType, eventData = {}) => {
         if (!sessionId && !participantId) {
-            // If logging before session ID is set (e.g. app_mounted, session_start_failed),
-            // we might only have participantId. Backend is designed to handle this.
-            // For events like app_mounted where PID might also not be available yet (e.g. from URL params),
-            // this check might prevent logging. The specific log calls in useEffect[0] handle this.
             if (eventType !== 'app_mounted' && eventType !== 'app_mounted_no_pid' && eventType !== 'invalid_url_params' && eventType !== 'session_start_failed' && eventType !== 'session_start_success') {
                  console.warn(`Frontend log event "${eventType}" skipped: No session or participant ID available for logging.`);
                  return;
@@ -67,7 +64,6 @@ function App() {
                 eventType: eventType,
                 eventData: {
                     ...eventData,
-                    // Add client-side timestamp for more precise timing if needed
                     client_timestamp_utc: new Date().toISOString(),
                 }
             };
@@ -97,7 +93,7 @@ function App() {
                   avatar: conditionInfoFromUrl.avatar,
                   lsm: conditionInfoFromUrl.lsm 
               },
-              conditionName: condName // <-- ADDED: Send the condition name string
+              conditionName: condName
            });
 
           console.log("API Success: Session Started:", res.data.sessionId);
@@ -105,12 +101,9 @@ function App() {
           setLoadingProgress(100); 
           setInitialMessages(res.data.initialHistory || []); 
           
-          // Store the original name and the {avatar, lsm} object confirmed by the backend
           setCondition({ name: condName, ...res.data.condition }); 
-          setSessionId(res.data.sessionId); // Set sessionId AFTER other states that logFrontendEvent might depend on
+          setSessionId(res.data.sessionId); 
 
-          // Log session_start success from frontend.
-          // This log now occurs *after* sessionId and condition state are set.
           logFrontendEvent('session_start_success', {
                participant_id_param: pid, 
                condition_string_param: condName, 
@@ -122,23 +115,36 @@ function App() {
           clearLoadingInterval(); 
           clearTimeout(logoTimerRef.current); 
 
-           // Log session_start failure. participantId state is set, sessionId is null.
            logFrontendEvent('session_start_failed', {
-                participant_id_param: pid, // PID from URL
-                condition_string_param: condName, // Condition string from URL
+                participant_id_param: pid,
+                condition_string_param: condName,
                 error_message: error.message,
                 error_status: error.response?.status,
                 error_data: error.response?.data
            });
           setPhase('error'); 
       }
-    }, [logFrontendEvent, API_BASE_URL]); // Dependencies: logFrontendEvent, API_BASE_URL
+    }, [logFrontendEvent, API_BASE_URL]);
 
 
     const endSession = useCallback(() => {
       console.log(`Session ${sessionId} ending, transitioning to survey phase.`);
       setPhase('survey'); 
     }, [sessionId]); 
+
+
+    // --- Effect 0: Manage body overflow based on phase (NEW) ---
+    useEffect(() => {
+        if (phase === 'loading') {
+            document.body.style.overflow = 'hidden';
+        } else {
+            document.body.style.overflow = 'auto'; // Or your default overflow
+        }
+        // Cleanup on component unmount
+        return () => {
+            document.body.style.overflow = 'auto'; // Or your default overflow
+        };
+    }, [phase]);
 
 
     // --- Effect 1: Initial Setup, Parameter Parsing, and Starting Session ---
@@ -159,8 +165,7 @@ function App() {
         clearTimeout(phaseTransitionTimerRef.current);
         clearLoadingInterval();
     
-        // ✅ Preload avatar images at start
-        const avatarImages = [frog, panda, cat, capybara, bird, elephant];
+        const avatarImages = [frog, panda, cat, capybara, bird, elephant, kagami];
         avatarImages.forEach((src) => {
             const img = new Image();
             img.src = src;
@@ -177,7 +182,7 @@ function App() {
                     eventData,
                 });
                 console.log(`Initial frontend event logged: ${eventType}`, eventData);
-            } catch (error) {
+            } catch (error) { // <<<--- CORRECTED LINE
                 console.error(`Failed to log initial frontend event "${eventType}":`, error);
             }
         };
@@ -221,12 +226,12 @@ function App() {
             clearTimeout(logoTimerRef.current);
             clearTimeout(phaseTransitionTimerRef.current);
         };
-    }, []); // Empty dependency array means this runs once on mount
+    }, []); 
 
 
     // --- Effect 2: Handling the Phase Transition from Loading to Intro ---
     useEffect(() => {
-      if (phase === 'loading' && logoTransitioned && sessionId) { // sessionId implies startSession was successful
+      if (phase === 'loading' && logoTransitioned && sessionId) {
         console.log("Phase transition criteria met: loading -> intro");
         clearTimeout(phaseTransitionTimerRef.current);
 
@@ -253,7 +258,6 @@ function App() {
             return; 
         }
 
-        // condition.avatar should be the boolean from the backend-confirmed condition object
         const nextPhase = condition.avatar ? 'avatar' : 'chat';
         
         console.log(`Changing phase from intro to ${nextPhase}`);
@@ -263,7 +267,7 @@ function App() {
     }, [sessionId, condition, logFrontendEvent]); 
 
 
-    const handleAvatarSelected = useCallback(async (avatarUrl) => { // Make async
+    const handleAvatarSelected = useCallback(async (avatarUrl) => { 
       console.log("Premade avatar selected:", avatarUrl);
       setSelectedAvatarUrl(avatarUrl); 
 
@@ -272,7 +276,6 @@ function App() {
               await axios.post(`${API_BASE_URL.replace(/\/$/, '')}/api/session/set_avatar_details`, {
                   sessionId: sessionId,
                   avatarUrl: avatarUrl
-                  // No prompt for premade
               });
               logFrontendEvent('premade_avatar_details_sent', { avatar_url_selected: avatarUrl });
           } catch (error) {
@@ -289,16 +292,13 @@ function App() {
 
       setPhase('chat');
       logFrontendEvent('phase_change', { from: 'avatar', to: 'chat', avatar_type_flow: 'premade' });
-       // The 'avatar_premade_selected' event if distinct can be logged inside AvatarSelection component
-       // or here: logFrontendEvent('avatar_premade_confirmed', { avatar_url: avatarUrl });
 
     }, [logFrontendEvent, sessionId, API_BASE_URL]); 
 
 
-     const handleAvatarGenerated = useCallback(async (avatarData) => { // Make async, avatarData is { url, prompt }
+     const handleAvatarGenerated = useCallback(async (avatarData) => { 
         if (!avatarData || !avatarData.url) {
             console.error("handleAvatarGenerated called with invalid avatarData:", avatarData);
-            // Potentially set error phase or log critical error
             logFrontendEvent('generated_avatar_invalid_data_received', { received_data: avatarData });
             return;
         }
@@ -328,16 +328,12 @@ function App() {
 
         setPhase('chat');
         logFrontendEvent('phase_change', { from: 'avatar', to: 'chat', avatar_type_flow: 'generated' });
-        // The 'avatar_generated_confirmed' event is logged inside AvatarGenerated component
-        // or here: logFrontendEvent('avatar_generated_confirmed', { avatar_url: avatarData.url, avatar_prompt: avatarData.prompt });
 
      }, [logFrontendEvent, sessionId, API_BASE_URL]); 
 
 
      const handleChatEndSignal = useCallback(() => {
         console.log("Chat session end signal received from ChatInterface.");
-        // As per previous comments, actual phase change to 'survey' is handled by ChatInterface's timer/redirect.
-        // If this function were to setPhase, a logFrontendEvent for 'phase_change' would go here.
      }, []); 
 
      const renderAvatarComponent = () => {
@@ -347,20 +343,17 @@ function App() {
              );
          }
 
-        // condition.name is the string like "avatar_generated_static"
         if (condition.name && condition.name.startsWith('avatar_generated')) {
             return (
                 <AvatarGenerated
                     sessionId={sessionId}
                     onNext={handleAvatarGenerated} 
-                    // apiBaseUrl={API_BASE_URL} // AvatarGenerated uses its own API_BASE_URL constant
                     logFrontendEvent={logFrontendEvent} 
                  />
              );
          } else if (condition.name && condition.name.startsWith('avatar_premade')) {
              return (
                  <Avatar
-                    //  sessionId={sessionId} // Not currently used by Avatar.jsx
                      onNext={handleAvatarSelected} 
                      logFrontendEvent={logFrontendEvent} 
                   />
@@ -418,8 +411,10 @@ function App() {
           )}
 
           {phase === 'loading' && (
-              <div className="absolute bottom-0 left-0 w-full pb-10 flex flex-col items-center z-30">
-                   {!logoTransitioned && <p className="text-gray-700 text-lg mb-10">Loading...</p>}
+              // MODIFIED: Loading bar container classes for mobile positioning
+              <div className="absolute left-0 w-full flex flex-col items-center z-30 px-4 sm:px-0 bottom-[20vh] sm:bottom-10 sm:pb-10">
+                   {/* MODIFIED: Reduced margin-bottom for "Loading..." text on mobile */}
+                   {!logoTransitioned && <p className="text-gray-700 text-lg mb-4 sm:mb-10">Loading...</p>}
                    <div className="w-3/4 max-w-md h-2 bg-gray-200 rounded overflow-hidden mb-2">
                        <div className="h-full bg-blue-500 rounded transition-width duration-150 ease-linear" style={{ width: `${loadingProgress}%` }} />
                    </div>
@@ -443,7 +438,7 @@ function App() {
                   <ChatInterface 
                      sessionId={sessionId}
                      condition={condition.name} 
-                     backendCondition={condition} // This is the {name, avatar, lsm} object
+                     backendCondition={condition}
                      participantId={participantId}
                      initialMessages={initialMessages}
                      userAvatarUrl={userAvatarUrl} 

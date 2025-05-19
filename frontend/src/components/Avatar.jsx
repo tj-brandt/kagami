@@ -1,5 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react'; // Added useRef
-// import backgroundChat from '../assets/background_chat.png'; // Vanta will be the background
+import React, { useState, useEffect, useRef } from 'react';
 import frog from '../assets/avatars/frog.png';
 import panda from '../assets/avatars/panda.png';
 import cat from '../assets/avatars/cat.png';
@@ -7,7 +6,7 @@ import capybara from '../assets/avatars/capybara.png';
 import bird from '../assets/avatars/bird.png';
 import elephant from '../assets/avatars/elephant.png';
 import arrowImg from '../assets/arrow.png';
-import * as THREE from 'three'; // For Vanta
+import * as THREE from 'three';
 import FOG from 'vanta/dist/vanta.fog.min.js';
 
 const avatars = [
@@ -19,20 +18,17 @@ const avatars = [
   { id: 'bird', label: 'Bird', imgsrc: bird },
 ];
 
-// Define duration in ms to match Tailwind config (0.4s)
 const SLIDE_ANIMATION_DURATION_MS = 400;
 
 export default function AvatarSelection({ onNext }) {
-  const vantaRef = useRef(null); // Ref for Vanta
+  const vantaRef = useRef(null);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const [slideDirection, setSlideDirection] = useState(null); // 'left', 'right', or null
-  const [animationKey, setAnimationKey] = useState(0); // To force re-render/re-mount
-  const [isBouncing, setIsBouncing] = useState(true); // Control bounce animation
+  const [slideDirection, setSlideDirection] = useState(null);
+  const [animationKey, setAnimationKey] = useState(0);
+  const [isBouncing, setIsBouncing] = useState(true);
 
-  // Vanta.js Background Effect
   useEffect(() => {
     let vantaEffect = null;
-
     if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches && vantaRef.current) {
       vantaEffect = FOG({
         el: vantaRef.current,
@@ -45,124 +41,114 @@ export default function AvatarSelection({ onNext }) {
         highlightColor: 0xffffff,
         midtoneColor: 0xe1e1e1,
         lowlightColor: 0xc5c5c5,
-        baseColor: 0xffffff, // Consistent base color
+        baseColor: 0xffffff,
         blurFactor: 0.58,
         speed: 0.10
       });
     }
-
     return () => {
       if (vantaEffect) vantaEffect.destroy();
     };
-  }, []); // Empty dependency array ensures this runs once on mount and cleans up on unmount
+  }, []);
 
-  // Effect to re-enable bouncing after the slide animation completes
   useEffect(() => {
     if (animationKey > 0) {
       const timer = setTimeout(() => {
         setIsBouncing(true);
-        setSlideDirection(null); 
+        setSlideDirection(null);
       }, SLIDE_ANIMATION_DURATION_MS);
       return () => clearTimeout(timer);
     }
-  }, [animationKey]); 
+  }, [animationKey]);
 
   const handleNext = () => {
-    setIsBouncing(false); 
-    setSlideDirection('right'); 
-    setAnimationKey((prevKey) => prevKey + 1); 
+    setIsBouncing(false);
+    setSlideDirection('right');
+    setAnimationKey((prevKey) => prevKey + 1);
     setCurrentIndex((prev) => (prev + 1) % avatars.length);
   };
 
   const handlePrev = () => {
-    setIsBouncing(false); 
-    setSlideDirection('left'); 
-    setAnimationKey((prevKey) => prevKey + 1); 
+    setIsBouncing(false);
+    setSlideDirection('left');
+    setAnimationKey((prevKey) => prevKey + 1);
     setCurrentIndex((prev) => (prev - 1 + avatars.length) % avatars.length);
   };
 
   const handleConfirm = () => {
     const selectedAvatar = avatars[currentIndex];
-    onNext(selectedAvatar.imgsrc); 
+    onNext(selectedAvatar.imgsrc);
   };
 
-  const getAvatarClasses = () => {
-    let classes = 'w-96 h-auto object-contain';
-    if (isBouncing) {
-      classes += ' animate-bounceSlow'; 
-    } else if (slideDirection === 'left') {
-      classes += ' animate-slideLeftSmall'; 
-    } else if (slideDirection === 'right') {
-      classes += ' animate-slideRightSmall'; 
-    }
-    return classes;
+  const getAvatarAnimationClasses = () => {
+    if (isBouncing) return 'animate-bounceSlow';
+    if (slideDirection === 'left') return 'animate-slideLeftSmall';
+    if (slideDirection === 'right') return 'animate-slideRightSmall';
+    return '';
   };
-
 
   return (
     <div
-      ref={vantaRef} // Apply vantaRef here
-      id="vanta-bg"   // Optional: if you have CSS targeting this
-      className="w-screen h-screen flex flex-col items-center justify-between relative" // Removed bg-cover, bg-center
-      style={{
-        // backgroundImage: `url(${backgroundChat})`, // Removed: Vanta will be the background
-        overflow: 'hidden' // Good practice for Vanta containers
-      }}
+      ref={vantaRef}
+      id="vanta-bg"
+      // MODIFIED: Removed justify-between, main container now centers its content vertically if space allows.
+      className="w-screen h-screen flex flex-col items-center relative overflow-hidden pt-4 pb-4 sm:pt-6 sm:pb-6"
     >
       {/* Top Text */}
-      <div className="mt-8 text-center text-2xl font-semibold bg-gray-700 text-white px-6 py-2 rounded-full z-10"> {/* Added z-10 */}
+      <div className="text-center text-xl sm:text-2xl font-semibold bg-gray-700 bg-opacity-70 text-white px-4 py-2 sm:px-6 rounded-full z-10">
         Select your avatar!
       </div>
 
-      {/* Spacer */}
-      <div className="flex-1" />
+      {/* Middle Section: Avatar, Arrows, and Confirm Button - This will take up flexible space and center its content */}
+      <div className="flex-grow w-full flex flex-col justify-center items-center px-4 z-10 overflow-hidden py-2">
+        {/* Avatar and Arrows Container */}
+        <div className="relative w-full max-w-[200px] xs:max-w-[220px] sm:max-w-[260px] md:max-w-xs flex justify-center items-center mb-4 sm:mb-6"> {/* Added margin-bottom here */}
+          {/* Left Arrow */}
+          <button
+            onClick={handlePrev}
+            aria-label="Previous Avatar"
+            className="absolute -left-3 sm:-left-4 top-1/2 -translate-y-1/2 p-2 z-20 rounded-full hover:bg-gray-500 hover:bg-opacity-20 transition-colors"
+          >
+            <img
+              src={arrowImg}
+              alt="Previous"
+              className="w-6 h-5 xs:w-8 xs:h-6 sm:w-10 sm:h-8 hover:scale-110 transition-transform"
+            />
+          </button>
 
-      {/* Arrows and Avatar (Overlay Style) */}
-      <div className="relative w-full max-w-xs mx-auto flex justify-center items-center z-10">
-        
-        {/* Avatar */}
-        <img
-          key={animationKey}
-          src={avatars[currentIndex].imgsrc}
-          alt={avatars[currentIndex].label}
-          className={`${getAvatarClasses()} w-full h-auto object-contain`}
-        />
+          {/* Avatar Image Container */}
+          <div className="w-full aspect-square flex justify-center items-center">
+            <img
+              key={animationKey}
+              src={avatars[currentIndex].imgsrc}
+              alt={avatars[currentIndex].label}
+              className={`max-w-full max-h-full object-contain ${getAvatarAnimationClasses()}`}
+            />
+          </div>
 
-        {/* Left Arrow */}
-        <button
-          onClick={handlePrev}
-          aria-label="Previous Avatar"
-          className="absolute left-2 top-1/2 -translate-y-1/2"
-        >
-          <img
-            src={arrowImg}
-            alt="Previous"
-            className="w-10 h-8 hover:scale-110 transition"
-          />
-        </button>
+          {/* Right Arrow */}
+          <button
+            onClick={handleNext}
+            aria-label="Next Avatar"
+            className="absolute -right-3 sm:-right-4 top-1/2 -translate-y-1/2 p-2 z-20 rounded-full hover:bg-gray-500 hover:bg-opacity-20 transition-colors"
+          >
+            <img
+              src={arrowImg}
+              alt="Next"
+              className="w-6 h-5 xs:w-8 xs:h-6 sm:w-10 sm:h-8 rotate-180 hover:scale-110 transition-transform"
+            />
+          </button>
+        </div>
 
-        {/* Right Arrow */}
-        <button
-          onClick={handleNext}
-          aria-label="Next Avatar"
-          className="absolute right-2 top-1/2 -translate-y-1/2"
-        >
-          <img
-            src={arrowImg}
-            alt="Next"
-            className="w-10 h-8 rotate-180 hover:scale-110 transition"
-          />
-        </button>
-      </div>
-
-      {/* Confirm Button */}
-      <div className="mb-10 z-10"> {/* Added z-10 */}
-        <button
-          onClick={handleConfirm}
-          className="bg-white text-gray-600 px-6 py-3 rounded-full hover:bg-gray-300 transition"
-        >
-          Confirm
-        </button>
+        {/* Confirm Button - Now part of the middle, vertically centered group */}
+        <div className="z-10"> {/* Removed mb from here, spacing handled by Avatar container's mb */}
+          <button
+            onClick={handleConfirm}
+            className="bg-white text-gray-700 px-5 py-2.5 sm:px-6 sm:py-3 rounded-full hover:bg-gray-200 active:bg-gray-300 transition-colors shadow-md text-sm sm:text-base font-medium"
+          >
+            Confirm
+          </button>
+        </div>
       </div>
     </div>
   );
