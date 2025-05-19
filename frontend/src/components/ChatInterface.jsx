@@ -8,20 +8,25 @@ import FOG from 'vanta/dist/vanta.fog.min.js';
 
 export default function ChatInterface({ 
   sessionId, 
-  condition, // This is the string like "Avatar_Generated_Adaptive" passed from App.js
-  backendCondition, // This is the {avatar: bool, lsm: bool} object from backend session start
-  userAvatarUrl,      // URL for generated avatar
-  selectedAvatarUrl,  // URL for premade avatar
+  condition, 
+  backendCondition, 
+  userAvatarUrl,      
+  selectedAvatarUrl,  
   apiBaseUrl, 
   initialMessages, 
-  participantId       // Passed as a prop
-  // onEndSession // Optional
+  participantId       
 }) {
   const vantaRef = useRef(null);
 
   useEffect(() => {
-    let vantaEffect = null;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = 'auto'; 
+    };
+  }, []); 
 
+  useEffect(() => {
+    let vantaEffect = null;
     if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches && vantaRef.current) {
       vantaEffect = FOG({
         el: vantaRef.current,
@@ -39,18 +44,14 @@ export default function ChatInterface({
         speed: 0.10
       });
     }
-
     return () => {
       if (vantaEffect) vantaEffect.destroy();
     };
   }, []);
+
   const conditionString = String(condition || ''); 
   const isGenerated = conditionString.includes('generated');
-  // const isPregenerated = conditionString.includes('premade'); // Not strictly needed if userAvatar logic covers it
   const isNoAvatar = conditionString.includes('noavatar');
-
-  // Determine which avatar to display for the user side (if any)
-  // This logic seems fine based on your prop names
   const userDisplayAvatar = isGenerated ? userAvatarUrl : selectedAvatarUrl;
 
   const [messages, setMessages] = useState([]);
@@ -62,11 +63,10 @@ export default function ChatInterface({
   const pickerRef = useRef(null);
   const messagesEndRef = useRef(null);
 
-  // --- STATE FOR REDCAP REDIRECT ---
   const [postSurveyRedirectUrl, setPostSurveyRedirectUrl] = useState('');
-  const [redirectError, setRedirectError] = useState(false); // To show a fallback message
+  const [redirectError, setRedirectError] = useState(false); 
 
-  const [remainingTime, setRemainingTime] = useState(600); // 10 minutes in seconds
+  const [remainingTime, setRemainingTime] = useState(600); 
   const [sessionExpired, setSessionExpired] = useState(false);
 
   const focusInput = () => {
@@ -75,21 +75,19 @@ export default function ChatInterface({
     }, 0); 
   };
   
-  // --- PARSE QUERY PARAMETERS ON INITIAL LOAD (for REDCap redirect URL) ---
   useEffect(() => {
     const queryParams = new URLSearchParams(window.location.search);
     const redcapPostUrlFromQuery = queryParams.get('post_survey_url');
 
     if (redcapPostUrlFromQuery) {
-      // It's good practice to decode, though your test showed it wasn't encoded
       const decodedUrl = decodeURIComponent(redcapPostUrlFromQuery);
       setPostSurveyRedirectUrl(decodedUrl);
       console.log("REDCap Post Survey URL received and set:", decodedUrl);
     } else {
       console.error("CRITICAL: REDCap post_survey_url not found in query parameters!");
-      setRedirectError(true); // Set error state to display fallback message later
+      setRedirectError(true); 
     }
-  }, []); // Empty dependency array: run only once on mount
+  }, []); 
 
   useEffect(() => {
     if (initialMessages && initialMessages.length > 0) {
@@ -146,15 +144,14 @@ export default function ChatInterface({
     console.log("Participant ID:", participantId);
   }, [sessionId, backendCondition, condition, participantId]); 
 
-  // --- COUNTDOWN TIMER AND SESSION END LOGIC ---
   useEffect(() => {
-    if (!sessionId) return; // Don't start countdown if sessionID isn't ready
+    if (!sessionId) return; 
 
     const countdown = setInterval(() => { 
       setRemainingTime(prev => {
         if (prev <= 1) {
           clearInterval(countdown);
-          if (!sessionExpired) { // Ensure this block runs only once
+          if (!sessionExpired) { 
             setSessionExpired(true);
             document.body.style.filter = 'grayscale(100%)';
 
@@ -166,17 +163,15 @@ export default function ChatInterface({
               } catch (error) {
                 console.error('Failed to signal session end to backend:', error);
               } finally {
-                // Redirect after a delay, regardless of backend call success
                 setTimeout(() => {
                   if (postSurveyRedirectUrl) {
                     console.log("Redirecting to REDCap post-survey:", postSurveyRedirectUrl);
                     window.location.href = postSurveyRedirectUrl;
                   } else {
                     console.error("Cannot redirect: Post-survey URL was not set. Fallback message should be shown.");
-                    // The redirectError state will trigger a message in the UI
-                    setRedirectError(true); // Ensure this is set if URL is missing
+                    setRedirectError(true); 
                   }
-                }, 2000); // 2-second delay to allow backend call and give user a moment
+                }, 2000); 
               }
             };
             endSessionFlow();
@@ -188,7 +183,7 @@ export default function ChatInterface({
     }, 1000);
   
     return () => clearInterval(countdown);
-  }, [sessionId, apiBaseUrl, postSurveyRedirectUrl, sessionExpired]); // Added sessionExpired to prevent re-runs
+  }, [sessionId, apiBaseUrl, postSurveyRedirectUrl, sessionExpired]); 
 
   const handleSend = async () => {
     if (inputValue.trim() === '' || !sessionId || isLoading || sessionExpired) return;
@@ -214,9 +209,6 @@ export default function ChatInterface({
       });
 
       console.log("Message response received:", response.data);
-      // console.log("Raw LSM Score for this turn:", response.data.lsmScore); // Optional: keep for debugging
-      // console.log("Smoothed LSM Score after this turn:", response.data.smoothedLsmAfterTurn);
-      // console.log("Bot Style Profile Used (includes prev smoothed LSM):", response.data.styleProfile);
 
       const botMessage = { sender: 'bot', text: response.data.response };
 
@@ -230,7 +222,6 @@ export default function ChatInterface({
 
     } catch (error) {
       console.error('Error sending message:', error);
-      // ... (error handling as before) ...
       const fallbackBot = { sender: 'bot', text: 'Oops, something went wrong. Please try again.' };
       setMessages(prev => {
         const newMessages = [...prev];
@@ -245,20 +236,19 @@ export default function ChatInterface({
   };
 
   const handleKeyDown = e => {
-    if (e.key === 'Enter' && !e.shiftKey && !sessionExpired) { // Prevent send if session expired
+    if (e.key === 'Enter' && !e.shiftKey && !sessionExpired) { 
       e.preventDefault();
       handleSend();
     }
   };
 
-  // --- UI FOR REDIRECT ERROR ---
   if (sessionExpired && redirectError && !postSurveyRedirectUrl) {
     return (
       <div style={{ 
           width: '100%', height: '100vh', display: 'flex', 
           flexDirection: 'column', justifyContent: 'center', alignItems: 'center', 
           textAlign: 'center', padding: '20px', fontFamily: 'Arial, sans-serif',
-          filter: 'grayscale(100%)' // Keep grayscale if session expired
+          filter: 'grayscale(100%)' 
       }}>
         <h2>Thank You!</h2>
         <p>Your chat session has concluded.</p>
@@ -276,6 +266,10 @@ export default function ChatInterface({
     );
   }
 
+  // Define heights for layout calculations (adjust if input bar/timer changes significantly)
+  const INPUT_BAR_ESTIMATED_HEIGHT_PX = 70; // For tailwind: p-4 outer, py-2 inner, ~h-14 + padding
+  const TIMER_HEIGHT_PX = 30; // Approx height of timer
+  const AVATAR_AREA_BOTTOM_MARGIN_VH = 48; // Where messages should sit above
 
   return (
   <div
@@ -285,7 +279,6 @@ export default function ChatInterface({
       width: '100%',
       height: '100vh',
       position: 'relative',
-      overflow: 'hidden'
     }}
       onClick={(e) => {
         const emojiPickerButton = e.target.closest('button[aria-label="Toggle Emoji Picker"]');
@@ -303,8 +296,8 @@ export default function ChatInterface({
       }}
     >
       {/* Countdown Timer */}
-      <div className="fixed bottom-[80px] w-full flex justify-center z-40">
-        <div className="bg-white/80 backdrop-blur-sm px-4 py-1 rounded-full text-gray-700 text-sm font-mono shadow">
+      <div className="fixed bottom-[80px] w-full flex justify-center z-40 pointer-events-none">
+        <div className="bg-white/80 backdrop-blur-sm px-4 py-1 rounded-full text-gray-700 text-sm font-mono shadow pointer-events-auto">
           {sessionExpired
             ? "Chat session ended. Preparing to redirect..."
             : `Time left: ${Math.floor(remainingTime / 60)
@@ -314,14 +307,25 @@ export default function ChatInterface({
       </div>
 
       {/* Messages */}
-      <div className="absolute bottom-[48vh] left-1/2 transform -translate-x-1/2 w-full max-w-3xl flex flex-col items-center px-2 space-y-2 overflow-y-auto h-[calc(100vh - 53vh - 80px)] pb-4">
+      {/* REVERTED: Message container position and height to previous working style */}
+      <div 
+        className="absolute left-1/2 transform -translate-x-1/2 w-full max-w-3xl flex flex-col items-center px-2 space-y-2 overflow-y-auto pt-4 pb-4"
+        style={{
+          bottom: `${AVATAR_AREA_BOTTOM_MARGIN_VH}vh`,
+          // Height calculation: 
+          // (100vh - AVATAR_AREA_BOTTOM_MARGIN_VH_for_messages) 
+          // - top_padding (1rem from pt-4)
+          // This makes the message container occupy the space from top of screen down to where avatars start
+          height: `calc(${100 - AVATAR_AREA_BOTTOM_MARGIN_VH}vh - 1rem)` 
+        }}
+      >
         {messages.map((msg, idx) => {
           if (msg.sender === 'bot-thinking') {
-            // ... (thinking message as before) ...
             return (
               <div
                 key={`thinking-${idx}`}
-                className="max-w-xs sm:max-w-sm md:max-w-md px-4 py-2 rounded-2xl bg-[#3B3B3B] text-[#ffffff] self-start animate-pulse" 
+                // REVERTED: Bubble styling
+                className="max-w-xs sm:max-w-sm md:max-w-md lg:max-w-lg px-4 py-2 rounded-2xl bg-[#3B3B3B] text-[#ffffff] self-start animate-pulse" 
               >
                 <div className="h-4 bg-gray-600 rounded w-3/4 mb-1"></div>
                 <div className="h-4 bg-gray-600 rounded w-1/2"></div>
@@ -329,10 +333,10 @@ export default function ChatInterface({
             );
           }
           return (
-            // ... (regular message as before) ...
             <div
               key={idx}
-              className={`w-xl sm:max-w-sm md:max-w-md px-4 py-2 rounded-2xl whitespace-pre-wrap ${
+              // REVERTED: Bubble styling
+              className={`max-w-xs sm:max-w-sm md:max-w-md lg:max-w-lg px-4 py-2 rounded-2xl whitespace-pre-wrap text-base ${
                 msg.sender === 'bot'
                   ? 'bg-[#3B3B3B] text-[#ffffff] self-start'
                   : 'bg-[#DEDEDE] text-[#222222] self-end'
@@ -353,51 +357,52 @@ export default function ChatInterface({
       {/* Avatars */}
       {!isNoAvatar && (
         <>
-          <div className="fixed bottom-20 w-full flex justify-center items-end z-30 pointer-events-none">
+          <div className="fixed bottom-10 sm:bottom-12 md:bottom-16 w-full flex justify-center items-end z-30 pointer-events-none">
             <img
               src={kagamiAvatar}
               alt="Kagami Avatar"
-              className="h-[45vh] max-h-[550px] w-auto object-contain mr-[-5rem]" 
+              className="h-[35vh] sm:h-[40vh] md:h-[45vh] max-h-[400px] sm:max-h-[480px] md:max-h-[550px] w-auto object-contain mr-[-3rem] sm:mr-[-4rem] md:mr-[-5rem]" 
             />
             <img
-              src={userDisplayAvatar} // Use the determined user avatar
+              src={userDisplayAvatar} 
               alt="User Avatar"
-              className="h-[45vh] max-h-[550px] w-auto object-contain ml-[-5rem]" 
+              className="h-[35vh] sm:h-[40vh] md:h-[45vh] max-h-[400px] sm:max-h-[480px] md:max-h-[550px] w-auto object-contain ml-[-3rem] sm:ml-[-4rem] md:ml-[-5rem]" 
             />
           </div>
         </>
       )}
 
-      {/* Chat Input - Disable if sessionExpired */}
-      <div className={`fixed bottom-0 w-full flex justify-center p-4 z-50 ${sessionExpired ? 'opacity-50 pointer-events-none' : ''}`}>
-        <div className="flex w-full max-w-3xl items-center bg-white rounded-full shadow-md px-4 py-2"> 
-          <div className="relative mr-2 hidden sm:block">
+      {/* Chat Input */}
+      {/* Styles for input area are kept from previous successful iteration as they were generally fine */}
+      <div className={`fixed bottom-0 w-full flex justify-center p-2 sm:p-4 z-50 ${sessionExpired ? 'opacity-50 pointer-events-none' : ''}`}>
+        <div className="flex w-full max-w-xl sm:max-w-2xl md:max-w-3xl items-center bg-white rounded-full shadow-md px-3 py-1.5 sm:px-4 sm:py-2"> 
+          <div className="relative mr-1 sm:mr-2 hidden sm:block">
             <button
             onClick={(e) => {
               if (sessionExpired) return;
               e.stopPropagation(); 
               setShowEmojiPicker(prev => !prev);
             }}
-            className="block"
+            className="block p-1"
               aria-label="Toggle Emoji Picker"
               disabled={sessionExpired}
             >
-              <img src={smileIcon} alt="Emoji Picker Icon" className="w-6 h-6" />
+              <img src={smileIcon} alt="Emoji Picker Icon" className="w-5 h-5 sm:w-6 sm:h-6" />
             </button>
-            {showEmojiPicker && !sessionExpired && ( // Also hide picker if session expired
+            {showEmojiPicker && !sessionExpired && ( 
               <div
                 ref={pickerRef}
-                className="absolute bottom-full mb-6 left-0 z-50 p-2 bg-white rounded-xl shadow-lg border border-gray-200 w-64 max-h-80 overflow-y-auto"
+                className="absolute bottom-full mb-2 sm:mb-4 md:mb-6 left-0 z-50 p-1 sm:p-2 bg-white rounded-xl shadow-lg border border-gray-200 w-56 sm:w-64 max-h-64 sm:max-h-80 overflow-y-auto"
                 onClick={(e) => e.stopPropagation()} 
               >
                 <EmojiPicker.Root onEmojiSelect={({ emoji }) => {
                     setInputValue(prev => prev + emoji);
                 }}>
-                  <EmojiPicker.Search className="p-2 border-b w-full" /> 
+                  <EmojiPicker.Search className="p-1.5 sm:p-2 border-b w-full text-sm" /> 
                   <EmojiPicker.Viewport className="overflow-y-auto flex-grow"> 
                     <EmojiPicker.Loading>Loading…</EmojiPicker.Loading>
                     <EmojiPicker.Empty>No emoji found.</EmojiPicker.Empty>
-                    <EmojiPicker.List className="p-2 text-2xl grid gap-1" /> 
+                    <EmojiPicker.List className="p-1 sm:p-2 text-xl sm:text-2xl grid gap-1" /> 
                   </EmojiPicker.Viewport>
                 </EmojiPicker.Root>
               </div>
@@ -406,7 +411,7 @@ export default function ChatInterface({
           <input
             ref={inputRef}
             type="text"
-            className="flex-1 border-none focus:outline-none text-lg"
+            className="flex-1 border-none focus:outline-none text-base sm:text-lg bg-transparent"
             placeholder={isLoading ? "Sending..." : (sessionExpired ? "Session ended." : "Type a message...")}
             value={inputValue}
             onChange={e => setInputValue(e.target.value)}
@@ -421,7 +426,7 @@ export default function ChatInterface({
                 handleSend();
             }}
             disabled={!inputValue.trim() || isLoading || sessionExpired}
-            className={`ml-2 rounded-full px-4 py-2 transition ${
+            className={`ml-1 sm:ml-2 rounded-full px-3 py-1.5 sm:px-4 sm:py-2 transition text-sm sm:text-base ${
               !inputValue.trim() || isLoading || sessionExpired
                 ? 'bg-gray-400 cursor-not-allowed'
                 : 'bg-gray-600 hover:bg-gray-700 text-white'
