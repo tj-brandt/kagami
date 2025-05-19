@@ -1,9 +1,19 @@
+# backend/main.py
 from dotenv import load_dotenv
-load_dotenv()                                  # ← populate os.environ now
-from drive_upload import upload_log_to_drive   # ← now sees GOOGLE_DRIVE_FOLDER_ID
-import json
+load_dotenv()
 import os
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+import nltk_bootstrap # For NLTK's VADER, etc.
+import spacy_setup    # <<< ADD THIS LINE to load spaCy model on startup
+import formality_model_setup
+from drive_upload import upload_log_to_drive
+import json
 import nltk
+from pathlib import Path # Use pathlib for consistency
+
+MAIN_PY_DIR = Path(__file__).resolve().parent
+NLTK_DATA_PROJECT_PATH = MAIN_PY_DIR / "nltk_data"
+
 import uuid
 import random
 import time
@@ -23,7 +33,7 @@ from fastapi.middleware.cors import CORSMiddleware
 import download_nltk_data # Import this only ONCE
 from common import (
     detect_style_traits, compute_lsm_score, post_process_response, log_event,
-    MIN_LSM_TOKENS, LSM_SMOOTHING_ALPHA, LOG_DIR, DEFAULT_BOT_NAME,
+    MIN_LSM_TOKENS_FOR_SMOOTHING, LSM_SMOOTHING_ALPHA, LOG_DIR, DEFAULT_BOT_NAME,
     tokenize_text, TEMPERATURE, MAX_TOKENS, get_user_style_sample, TONE_VARIATIONS
 )
 from chatbot_logic import get_openai_response
@@ -124,88 +134,83 @@ def get_time_of_day_label():
 
 def generate_natural_greeting():
     time_label = get_time_of_day_label()
-    greetings = [
+    
+    # Simple, friendly base greetings
+    base_greetings = [
         "Hey there, I'm Kagami.",
-        "Hi there, I'm Kagami.",
-        "Hello, I'm Kagami.",
-        "Hey, friend, I'm Kagami."
+        "Hi, I'm Kagami.",
+        "What's up? I'm Kagami.",
+        "Hey, I'm Kagami. Glad we can chat."
     ]
-    themes = {
-        "dreamy": {"feelings": ["dreamy", "soft", "floaty", "hazy"],
-                   "references": [
-                       "like the dreamy opening track of a Beach House album.",
-                       "like discovering a hidden gem on SoundCloud at 3 AM.",
-                       "like a Studio Ghibli scene just before something magical happens.",
-                       "like a faded Polaroid of a summer you almost remember."
-                   ]},
-        "energetic": {"feelings": ["energetic", "exciting", "spirited", "vibrant", "awake"],
-                      "references": [
-                          "like hitting a perfect combo in DDR.",
-                          "like when your favorite Charli XCX track kicks in at full volume.",
-                          "like a Friday morning with a fresh playlist drop.",
-                          "like an early 2000s pop anthem blasting through wired headphones."
-                      ]},
-        "nostalgic": {"feelings": ["nostalgic", "familiar", "reflective", "bittersweet"],
-                      "references": [
-                          "like scrolling Tumblr at 2 AM in 2013.",
-                          "like customizing your Myspace profile back in the day.",
-                          "like the sound of booting up an iPod Classic.",
-                          "like an old MSN away message you forgot you wrote."
-                      ]},
-        "chill": {"feelings": ["chill", "calm", "relaxed", "mellow"],
-                  "references": [
-                      "like lo-fi beats echoing in a quiet room.",
-                      "like a long walk with no destination.",
-                      "like your favorite hoodie and a cup of something warm.",
-                      "like being underwater with headphones on."
-                  ]},
-        "cozy": {"feelings": ["cozy", "warm", "vibey", "relaxed"],
-                 "references": [
-                     "like redecorating your Animal Crossing home on a rainy day.",
-                     "like finding a soft corner of the internet that still feels alive.",
-                     "like opening a well-worn book and knowing the first line by heart.",
-                     "like your favorite fuzzy socks and a playlist that understands you."
-                 ]}
-    }
-    weights = {
-        "morning": ["energetic"]*3 + ["chill"]*2 + ["cozy"],
-        "afternoon": ["chill"]*2 + ["cozy", "nostalgic"],
-        "evening": ["nostalgic", "cozy", "dreamy"]*2,
-        "night": ["dreamy"]*3 + ["nostalgic", "cozy"]
-    }
-    questions = {
+    
+    # Optional, light time-specific observations
+    time_specific_phrases = {
         "morning": [
-            "What kind of music gets you moving in the morning?",
-            "Got a favorite playlist or podcast that kicks off your day?",
-            "Do you ever watch anything while eating breakfast — YouTube, cartoons, a comfort show?"
+            "Hope your morning's off to a good start!",
+            "Good morning!",
+            "Mornin'!", 
         ],
         "afternoon": [
-            "What song’s been stuck in your head today?",
-            "Caught anything good on your breaks — a TikTok series, a quick episode?",
-            "What’s your ideal chill vibe this afternoon — music, a show, or a bit of both?"
+            "Hope your afternoon is going well.",
+            "Good afternoon!",
+            "How's the afternoon treating you?",
         ],
         "evening": [
-            "What’s your go-to comfort show or movie when you’re done with the day?",
-            "Heard any good albums or playlists lately for winding down?",
-            "What kinds of stories pull you in at night — drama, fantasy, real-life stuff?",
-            "Do you have a favorite rewatch for evenings, or do you like trying something new?",
-            "What’s your perfect soundtrack for golden-hour walks or chill evenings?"
+            "Hope you're having a good evening.",
+            "Good evening!",
+            "How's your evening shaping up?",
         ],
         "night": [
-            "What's your ideal nighttime vibe — comfort rewatch, deep dive, or scroll spiral?",
-            "Got a favorite playlist or show you always come back to late at night?"
+            "Hope you're having a chill night.",
+            "Getting ready to wind down?",
+            "Late night vibes, huh?",
         ]
     }
 
-    theme = random.choice(weights.get(time_label, list(themes.keys())))
-    feeling = random.choice(themes[theme]["feelings"])
-    reference = random.choice(themes[theme]["references"])
-    greeting = random.choice(greetings)
-    question = random.choice(questions.get(time_label, []))
+    # Conversation starters tuned to Gen-Z/Millennial interests
+    # Feel free to expand these lists with more variety!
+    questions = {
+        "morning": [
+            "What's on your playlist this morning?",
+            "Got any cool plans for the day or just vibing?",
+            "First app you opened today, or are you avoiding screens for a bit?",
+            "Coffee, tea, or something else to kickstart the day?",
+            "What kind of energy are you bringing to today?"
+        ],
+        "afternoon": [
+            "How's your day been treating you so far?",
+            "Taking a break or just chilling? What are you up to?",
+            "Seen any good TikToks, memes, or anything interesting online lately?",
+            "What's one song that's been living rent-free in your head today?",
+            "Got anything fun lined up for later or this week?"
+        ],
+        "evening": [
+            "How was your day today?",
+            "Winding down for the evening? What's the plan – music, show, game?",
+            "Got any favorite shows you're binging right now, or a game you're really into?",
+            "What's your go-to way to relax after a busy day?",
+            "Any good music, podcasts, or art you've discovered recently?"
+        ],
+        "night": [
+            "Getting ready to wrap up the day, or still got some late-night energy?",
+            "What's on your mind as the day winds down?",
+            "Any particular playlist, show, or game for these late hours?",
+            "What's your favorite way to chill out before calling it a night?",
+            "Got a comfort show or some Lo-fi beats for the evening?"
+        ]
+    }
 
-    if random.choice([True, False]):
-        return f"{greeting} This {time_label} feels a little {feeling}. It’s {reference} {question}"
-    return f"{greeting} To me, this {time_label} feels {feeling}, {reference} {question}"
+    greeting = random.choice(base_greetings)
+    # Randomly decide if to include a time-specific phrase to vary openings
+    time_phrase = ""
+    if random.random() < 0.7: # 70% chance to include a time phrase
+        time_phrase = random.choice(time_specific_phrases.get(time_label, [""]))
+        
+    question = random.choice(questions.get(time_label, ["What's up?", "How's it going?"])) # Fallback question
+
+    if time_phrase:
+        return f"{greeting} {time_phrase} {question}"
+    return f"{greeting} {question}"
 # --- END Helper Functions ---
 
 
@@ -456,53 +461,47 @@ async def handle_message(req: MessageRequest):
         session["turn_number"] += 1
         user_text = req.message
         current_turn = session["turn_number"]
-        condition = session["condition"] # This is the {avatar, lsm} object
-        user_traits = detect_style_traits(user_text)
+        condition = session["condition"]
+        
+        user_traits = detect_style_traits(user_text) # This is where informality_score_model should be added
+        
         user_token_count = user_traits.get("word_count", 0)
         user_traits["lsm_score_prev"] = session.get("smoothed_lsm_score", 0.5)
 
-        # User message does not have an avatar_url associated with it
         session["history"].append({"role": "user", "content": user_text, "turn_number": current_turn})
         log_event({"event_type": "user_message", "content": user_text, "user_linguistic_traits": user_traits}, session_info=session)
 
         bot_raw, system_instruction_used = await get_openai_response(
-            user_prompt=user_text, 
-            chat_history=session["history"], 
-            is_adaptive=condition.get("lsm", False), # Safely get lsm
-            show_avatar=bool(session.get("avatar_url")), # Check if avatar_url is set
-            style_profile=user_traits,
+            user_prompt=user_text,
+            chat_history=session["history"],
+            is_adaptive=condition.get("lsm", False),
+            show_avatar=bool(session.get("avatar_url")),
+            style_profile=user_traits, # user_traits is passed here
             locked_tone=session.get("persona_style_tone")
         )
 
         if bot_raw.startswith("[Error]"):
-            # Log this error specifically before post-processing
             log_event({
-                "event_type": "error", 
-                "error_source": "openai_response_error",
-                "error_message": bot_raw,
-                "system_instruction_used": system_instruction_used
+                "event_type": "error", "error_source": "openai_response_error",
+                "error_message": bot_raw, "system_instruction_used": system_instruction_used
             }, session_info=session)
-            # Pass through, post_process_response might clean it or it becomes the bot_response
-            
-        bot_response = post_process_response(bot_raw, condition.get("lsm", False))
-        bot_traits = detect_style_traits(bot_response)
-        bot_token_count = bot_traits.get("word_count", 0)
-        recent_sample = get_user_style_sample(session["history"])
-        user_sample_for_lsm = recent_sample if recent_sample else user_text # Fallback to current user_text if no sample
-        
-        raw_lsm = 0.5 # Default LSM
-        if user_sample_for_lsm and bot_response: # Ensure texts are not empty for LSM
-             raw_lsm = compute_lsm_score(user_sample_for_lsm, bot_response)
 
-        update_smoothed = (user_token_count >= MIN_LSM_TOKENS and bot_token_count >= MIN_LSM_TOKENS)
+        bot_response = post_process_response(bot_raw, condition.get("lsm", False))
+        bot_traits = detect_style_traits(bot_response) # For bot's response
+        bot_token_count = bot_traits.get("word_count", 0)
+        
+        user_sample_for_lsm = get_user_style_sample(session["history"]) or user_text
+        raw_lsm = compute_lsm_score(user_sample_for_lsm, bot_response) if user_sample_for_lsm and bot_response else 0.5
+        
+        update_smoothed = (user_token_count >= MIN_LSM_TOKENS_FOR_SMOOTHING and \
+                           bot_token_count >= MIN_LSM_TOKENS_FOR_SMOOTHING)
+        
         prev_score = session.get("smoothed_lsm_score", 0.5)
         new_score = ((LSM_SMOOTHING_ALPHA * raw_lsm) + ((1 - LSM_SMOOTHING_ALPHA) * prev_score)) if update_smoothed else prev_score
         session["smoothed_lsm_score"] = new_score
 
-        # Add bot response to history. Include avatar_url if it's set in the session.
         bot_history_entry = {"role": "assistant", "content": bot_response, "turn_number": current_turn}
-        if session.get("avatar_url"): # Only add avatar_url to bot message if it exists
-            bot_history_entry["avatar_url"] = session.get("avatar_url")
+        if session.get("avatar_url"): bot_history_entry["avatar_url"] = session.get("avatar_url")
         session["history"].append(bot_history_entry)
         
         log_event({
@@ -510,6 +509,10 @@ async def handle_message(req: MessageRequest):
             "lsm_score_smoothed": new_score, "bot_linguistic_traits": bot_traits,
             "style_profile_used": user_traits, "system_instruction_used": system_instruction_used
         }, session_info=session)
+
+        # --- ADD THIS DEBUG PRINT ---
+        print(f"DEBUG (main.py - handle_message): User Traits for Prompt Generation: {json.dumps(user_traits, indent=2)}")
+        # --- END DEBUG PRINT ---
 
         return MessageResponse(response=bot_response, styleProfile=user_traits, lsmScore=raw_lsm, smoothedLsmAfterTurn=new_score)
 
