@@ -9,6 +9,7 @@ import FOG from 'vanta/dist/vanta.fog.min.js';
 const API_BASE_URL = (process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000').replace(/\/$/, '');
 const MAX_GENERATIONS = 5;
 
+
 export default function AvatarGenerated({ onNext, sessionId }) {
   const vantaRef = useRef(null); // Ref for Vanta
   const [generatedAvatarsObjects, setGeneratedAvatarsObjects] = useState([]);
@@ -18,6 +19,16 @@ export default function AvatarGenerated({ onNext, sessionId }) {
   const [error, setError] = useState(null);
 
   // Vanta.js Background Effect
+  useEffect(() => {
+    const isMobile = window.innerWidth < 640; // Tailwind 'sm' breakpoint
+    if (isMobile) {
+      document.body.style.overflow = 'hidden';
+    }
+  
+    return () => {
+      document.body.style.overflow = ''; // Reset on unmount
+    };
+  }, []);
   useEffect(() => {
     let vantaEffect = null;
 
@@ -151,7 +162,7 @@ export default function AvatarGenerated({ onNext, sessionId }) {
     <div
       ref={vantaRef} // Apply vantaRef here
       id="vanta-bg" // Optional: if you have CSS targeting this
-      className="w-screen h-screen flex flex-col items-center justify-between relative" // Removed bg-cover, bg-center
+      className="w-screen h-screen flex flex-col items-center justify-between relative overflow-hidden max-h-screen"
       style={{
         // backgroundImage: `url(${backgroundChat})`, // Removed: Vanta will be the background
         overflow: 'hidden' // Good practice for Vanta containers
@@ -179,7 +190,7 @@ export default function AvatarGenerated({ onNext, sessionId }) {
           <img
             src={currentAvatarSrc}
             alt={currentAvatarSrc === kagamiPlaceholder ? "Kagami Placeholder" : (generatedAvatarsObjects[currentIndex]?.prompt || "Generated Avatar")}
-            className={`w-96 h-auto object-contain ${loading ? 'animate-pulse' : ''}`}
+            className={`w-64 sm:w-80 md:w-96 h-auto max-h-[60vh] object-contain ${loading ? 'animate-pulse' : ''}`}
             onError={(e) => {
                 e.target.onerror = null; 
                 e.target.src = kagamiPlaceholder;

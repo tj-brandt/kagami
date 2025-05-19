@@ -117,28 +117,40 @@ export default function AvatarSelection({ onNext }) {
       {/* Spacer */}
       <div className="flex-1" />
 
-      {/* Arrows and Avatar */}
-      <div className="flex items-end justify-center gap-10 mb-0 z-10"> {/* Added z-10 */}
-          <button onClick={handlePrev} aria-label="Previous Avatar">
+      {/* Arrows and Avatar (Overlay Style) */}
+      <div className="relative w-full max-w-xs mx-auto flex justify-center items-center z-10">
+        
+        {/* Avatar */}
         <img
-          src={arrowImg}
-          alt="Previous"
-          className="w-10 h-10 transform hover:scale-110 transition relative -top-40"
-        />
-        </button>
-
-        <img
-          key={animationKey} 
+          key={animationKey}
           src={avatars[currentIndex].imgsrc}
           alt={avatars[currentIndex].label}
-          className={getAvatarClasses()} 
+          className={`${getAvatarClasses()} w-full h-auto object-contain`}
         />
 
-        <button onClick={handleNext} aria-label="Next Avatar">
+        {/* Left Arrow */}
+        <button
+          onClick={handlePrev}
+          aria-label="Previous Avatar"
+          className="absolute left-2 top-1/2 -translate-y-1/2"
+        >
+          <img
+            src={arrowImg}
+            alt="Previous"
+            className="w-10 h-8 hover:scale-110 transition"
+          />
+        </button>
+
+        {/* Right Arrow */}
+        <button
+          onClick={handleNext}
+          aria-label="Next Avatar"
+          className="absolute right-2 top-1/2 -translate-y-1/2"
+        >
           <img
             src={arrowImg}
             alt="Next"
-            className="w-10 h-10 hover:scale-110 rotate-180 transition relative -top-40"
+            className="w-10 h-8 rotate-180 hover:scale-110 transition"
           />
         </button>
       </div>

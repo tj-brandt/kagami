@@ -5,6 +5,12 @@ import ChatInterface from './components/ChatInterface'; // Import ChatInterface 
 import axios from 'axios'; // Import axios
 import AvatarGenerated from './components/AvatarGenerated'; // Assuming this is for Generated Selection
 import kagamiLogo from './assets/kagami.png'; // Import logo asset
+import frog from './assets/avatars/frog.png';
+import panda from './assets/avatars/panda.png';
+import cat from './assets/avatars/cat.png';
+import capybara from './assets/avatars/capybara.png';
+import bird from './assets/avatars/bird.png';
+import elephant from './assets/avatars/elephant.png';
 
 // --- Constants ---
 const rawApiBaseUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
@@ -138,9 +144,9 @@ function App() {
     // --- Effect 1: Initial Setup, Parameter Parsing, and Starting Session ---
     useEffect(() => { 
         const urlParams = new URLSearchParams(window.location.search);
-        const pidFromUrl = urlParams.get('pid'); // Use a different variable name to avoid conflict
+        const pidFromUrl = urlParams.get('pid');
         const condNameFromUrl = urlParams.get('cond')?.toLowerCase(); 
-
+    
         console.log("App useEffect 1: Initializing..."); 
         setLoadingProgress(0);
         setLogoTransitioned(false);
@@ -148,71 +154,73 @@ function App() {
         setShowIntroBackground(false);
         setParticipantId(null); 
         setCondition(null); 
-
+    
         clearTimeout(logoTimerRef.current);
         clearTimeout(phaseTransitionTimerRef.current);
         clearLoadingInterval();
-        
-        // Temporary state for logging before full state is set
+    
+        // ✅ Preload avatar images at start
+        const avatarImages = [frog, panda, cat, capybara, bird, elephant];
+        avatarImages.forEach((src) => {
+            const img = new Image();
+            img.src = src;
+        });
+    
         const tempParticipantId = pidFromUrl;
-
-        // Log app_mounted. This log uses tempParticipantId and occurs before full state update.
-        // logFrontendEvent is called directly here as its dependencies might not be fully set yet.
         const doInitialLog = async (eventType, eventData) => {
             try {
                 const cleanBaseUrl = API_BASE_URL.replace(/\/$/, '');
                 await axios.post(`${cleanBaseUrl}/api/log/frontend_event`, {
-                    sessionId: null, // Session ID not yet available
-                    participantId: tempParticipantId, // PID from URL, might be null
-                    eventType: eventType,
-                    eventData: eventData,
+                    sessionId: null,
+                    participantId: tempParticipantId,
+                    eventType,
+                    eventData,
                 });
                 console.log(`Initial frontend event logged: ${eventType}`, eventData);
             } catch (error) {
                 console.error(`Failed to log initial frontend event "${eventType}":`, error);
             }
         };
-        
+    
         if (tempParticipantId) {
-           doInitialLog('app_mounted', { participant_id_param: tempParticipantId, condition_string_param: condNameFromUrl });
+            doInitialLog('app_mounted', { participant_id_param: tempParticipantId, condition_string_param: condNameFromUrl });
         } else {
-           doInitialLog('app_mounted_no_pid', { url_params: window.location.search });
+            doInitialLog('app_mounted_no_pid', { url_params: window.location.search });
         }
-
-
+    
         if (pidFromUrl && condNameFromUrl && conditionDetails[condNameFromUrl]) {
-          setParticipantId(pidFromUrl); // Set participantId state now
-          // Set a preliminary condition state based on URL for UI logic before backend confirmation
-          setCondition({ name: condNameFromUrl, ...conditionDetails[condNameFromUrl] }); 
-
-          startSession(pidFromUrl, condNameFromUrl);
-
-          let currentProgress = 0;
-          intervalRef.current = setInterval(() => {
-              currentProgress += 2; 
-              if (currentProgress >= 96) { 
-                   setLoadingProgress(96);
-                   clearLoadingInterval(); 
-               } else { setLoadingProgress(currentProgress); }
-          }, 100); 
-
-          logoTimerRef.current = setTimeout(() => {
-              setLogoTransitioned(true); 
-          }, LOGO_TRANSITION_DELAY_MS);
-
+            setParticipantId(pidFromUrl);
+            setCondition({ name: condNameFromUrl, ...conditionDetails[condNameFromUrl] });
+    
+            startSession(pidFromUrl, condNameFromUrl);
+    
+            let currentProgress = 0;
+            intervalRef.current = setInterval(() => {
+                currentProgress += 2; 
+                if (currentProgress >= 96) {
+                    setLoadingProgress(96);
+                    clearLoadingInterval(); 
+                } else {
+                    setLoadingProgress(currentProgress);
+                }
+            }, 100); 
+    
+            logoTimerRef.current = setTimeout(() => {
+                setLogoTransitioned(true); 
+            }, LOGO_TRANSITION_DELAY_MS);
+    
         } else {
-          console.error("Missing or invalid pid/cond:", pidFromUrl, condNameFromUrl);
-          doInitialLog('invalid_url_params', { url_params: window.location.search, pid_param: pidFromUrl, cond_param: condNameFromUrl });
-          setPhase('error');
+            console.error("Missing or invalid pid/cond:", pidFromUrl, condNameFromUrl);
+            doInitialLog('invalid_url_params', { url_params: window.location.search, pid_param: pidFromUrl, cond_param: condNameFromUrl });
+            setPhase('error');
         }
-
+    
         return () => {
             console.log("App useEffect 1 cleanup");
             clearLoadingInterval();
             clearTimeout(logoTimerRef.current);
             clearTimeout(phaseTransitionTimerRef.current);
         };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []); // Empty dependency array means this runs once on mount
 
 
