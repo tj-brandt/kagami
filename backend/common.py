@@ -6,22 +6,43 @@ import emoji
 import json
 import random
 from datetime import datetime, timezone
-from typing import Optional # <<< ADD THIS (or add Optional to an existing typing import)
+from typing import Optional, Any
 
-import nltk # For SentimentIntensityAnalyzer (VADER)
+import nltk
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 
 from empath import Empath
-from spacy_setup import get_spacy_nlp_instance # Import from our spaCy setup
+from spacy_setup import get_spacy_nlp_instance
 from formality_model_setup import get_formality_model_components, get_formality_device
 import torch
-# --- Constants ---
-DEFAULT_BOT_NAME = "Kagami"
-SESSION_TIMEOUT_SECONDS = 600
-LOG_DIR = "experiment_logs"
-MIN_LSM_TOKENS_FOR_LSM_CALC = 5 # Min tokens in a text to be considered for LSM category calculation.
-MIN_LSM_TOKENS_FOR_SMOOTHING = 15 # Kept from your original, for when to update smoothed score
 
+# --- Global variables for Formality Model ---
+FORMALITY_MODEL: Optional[torch.nn.Module] = None
+FORMALITY_TOKENIZER: Optional[Any] = None
+FORMALITY_DEVICE: Optional[torch.device] = None
+
+def initialize_formality_model():
+    """
+    Initializes the global formality model, tokenizer, and device by fetching them
+    from formality_model_setup.py. This should be called once at application startup.
+    """
+    global FORMALITY_MODEL, FORMALITY_TOKENIZER, FORMALITY_DEVICE
+    if FORMALITY_MODEL is None or FORMALITY_TOKENIZER is None:
+        print("INFO (common.py - initialize_formality_model): Initializing formality model components in common.py...")
+        FORMALITY_MODEL, FORMALITY_TOKENIZER = get_formality_model_components()
+        FORMALITY_DEVICE = get_formality_device()
+        if FORMALITY_MODEL and FORMALITY_TOKENIZER:
+            print("INFO (common.py - initialize_formality_model): Formality model and tokenizer successfully loaded into common.py globals.")
+        else:
+            print("ERROR (common.py - initialize_formality_model): Failed to load formality model/tokenizer from formality_model_setup into common.py globals. Check formality_model_setup.py logs.")
+    else:
+        print("INFO (common.py - initialize_formality_model): Formality model components already initialized in common.py.")
+
+# --- Constants (minimal for this example, ensure your full constants are present) ---
+DEFAULT_BOT_NAME = "Kagami"
+LOG_DIR = "experiment_logs"
+MIN_LSM_TOKENS_FOR_LSM_CALC = 5
+MIN_LSM_TOKENS_FOR_SMOOTHING = 15
 LSM_SMOOTHING_ALPHA = 0.25
 UNCERTAINTY_THRESHOLD = 0.5
 HEDGING_THRESHOLD = 0.3
@@ -97,39 +118,43 @@ except Exception as e:
      print(f"ERROR (common.py): Could not initialize Empath: {e}")
      lexicon = None
 
-
 def get_text_formality_score(text: str) -> Optional[float]:
     """
-    Returns the probability that the input text is informal (from 0.0 to 1.0).
-    Uses s-nlp/deberta-large-formality-ranker where:
-      - LABEL_0 = informal
-      - LABEL_1 = formal
+    Calculates the informality score of a given text using the loaded transformer model.
+    Returns a float (e.g., 0.0 for very formal, 1.0 for very informal) or None if the model isn't loaded
+    or an error occurs.
     """
-    model, tokenizer = get_formality_model_components()
-    device = get_formality_device()
+    global FORMALITY_MODEL, FORMALITY_TOKENIZER, FORMALITY_DEVICE # Access the globals
 
-    if not model or not tokenizer:
-        print("WARNING (common.py - get_text_formality_score): Formality model/tokenizer not loaded.")
+    if FORMALITY_MODEL is None or FORMALITY_TOKENIZER is None:
+        print("WARNING (common.py - get_text_formality_score): Formality model/tokenizer not loaded. Cannot calculate score.")
         return None
+
+    if not text or not text.strip():
+        # Optionally, print a debug message or decide how to handle empty input
+        # print("DEBUG (common.py - get_text_formality_score): Empty input text. Returning None.")
+        return None # Or return a default like 0.0 or 0.5 if that makes more sense for your logic
 
     try:
-        inputs = tokenizer(text, return_tensors="pt", truncation=True, max_length=512, padding=True)
-        inputs = {k: v.to(device) for k, v in inputs.items()}
+        inputs = FORMALITY_TOKENIZER(text, return_tensors="pt", truncation=True, padding=True, max_length=512)
+        inputs = {k: v.to(FORMALITY_DEVICE) for k, v in inputs.items()} # Move inputs to the model's device
 
-        with torch.no_grad():
-            logits = model(**inputs).logits
-            probs = torch.softmax(logits, dim=1).squeeze()
+        with torch.no_grad(): # Disable gradient calculations for inference
+            outputs = FORMALITY_MODEL(**inputs)
+            logits = outputs.logits
 
-        # Assuming LABEL_0 = informal, LABEL_1 = formal
-        informal_prob = probs[0].item()
+        # For s-nlp ranker:
+        # Logit 0: "formal", Logit 1: "informal"
+        # We want an "informality score", so we take the probability of the "informal" class.
+        probabilities = torch.softmax(logits, dim=-1)
+        informality_prob = probabilities[0][1].item() # Probability of the second class (informal)
 
-        print(f"DEBUG: Informal: {informal_prob:.4f} | Formal: {probs[1].item():.4f}")
-        return informal_prob
+        return informality_prob
 
     except Exception as e:
-        print(f"ERROR (common.py - get_text_formality_score): Failed to score text '{text[:50]}...'. Error: {e}")
+        print(f"ERROR (common.py - get_text_formality_score): Error during formality model inference for text '{text[:100]}...': {e}")
+        # Consider more detailed error logging if needed
         return None
-
 
 
 # --- Helper Functions ---
@@ -187,31 +212,28 @@ def compute_lsm_score(user_text: str, bot_text: str) -> float:
     return sum(scores) / len(scores) if scores else 0.5
 
 def detect_style_traits(user_input: str) -> dict:
-    nlp_spacy = get_spacy_nlp_instance()
+    nlp_spacy = get_spacy_nlp_instance() # Ensure spacy_setup.py works and get_spacy_nlp_instance() is available
     traits = {}
     try:
         lower_input_for_regex = user_input.lower()
-        tokens_for_counts = tokenize_text(user_input)
-        word_count = len(tokens_for_counts)
+        tokens_for_counts = tokenize_text(user_input) # Ensure tokenize_text is robust
+        word_count = len(tokens_for_counts) if tokens_for_counts else 0
 
         # --- Calculate formality using the new transformer model ---
-        # import time # Optional: for timing
-        # formality_start_time = time.time()
+        # This call should now work as get_text_formality_score is defined above
         informality_score_transformer = get_text_formality_score(user_input)
-        # formality_end_time = time.time()
-        # print(f"DEBUG: Formality model inference time: {(formality_end_time - formality_start_time)*1000:.2f} ms")
-        # --- End formality calculation ---
-
 
         hedge_matches = HEDGING_RE.findall(lower_input_for_regex)
+        # Ensure INFORMAL_RE is defined. Using IGNORECASE in regex means you can pass user_input directly.
         informal_matches = INFORMAL_RE.findall(user_input)
+
 
         traits = {
             "word_count": word_count,
             "informal_score_regex": len(informal_matches) / max(1, word_count),
-            "informality_score_model": informality_score_transformer,
+            "informality_score_model": informality_score_transformer, # Will be float or None
             "hedging_score": len(hedge_matches) / max(1, word_count),
-            "emoji": emoji.emoji_count(user_input) > 0,
+            "emoji": emoji.emoji_count(user_input) > 0, # Ensure emoji library is imported
             "questioning": user_input.strip().endswith("?") or bool(QUESTION_RE.match(lower_input_for_regex)),
             "exclamatory": user_input.count("!") > 0,
             "short": word_count <= 10,
@@ -228,9 +250,9 @@ def detect_style_traits(user_input: str) -> dict:
             meta = "simpler"
         traits["meta_request"] = meta
 
-        if sia:
+        if sia: # Check if sia was successfully initialized
             sent = sia.polarity_scores(user_input)
-            sent = adjust_sentiment_for_emojis(sent, user_input)
+            sent = adjust_sentiment_for_emojis(sent, user_input) # Ensure this function is defined
             traits.update({
                 "sentiment_neg": sent["neg"],
                 "sentiment_neu": sent["neu"],
@@ -238,7 +260,7 @@ def detect_style_traits(user_input: str) -> dict:
                 "sentiment_compound": sent["compound"]
             })
         else:
-            traits.update({ # CORRECTED INDENTATION
+            traits.update({
                 "sentiment_neg": None, "sentiment_neu": None,
                 "sentiment_pos": None, "sentiment_compound": None
             })
@@ -252,19 +274,19 @@ def detect_style_traits(user_input: str) -> dict:
             sen_count = max(1, len(sentences_from_regex))
 
         traits["avg_sentence_length"] = word_count / sen_count if sen_count > 0 else 0
-        traits["avg_word_length"] = sum(len(w) for w in tokens_for_counts) / max(1, word_count)
+        traits["avg_word_length"] = sum(len(w) for w in tokens_for_counts) / max(1, word_count) if tokens_for_counts else 0
 
         try:
-            traits["flesch_reading_ease"] = textstat.flesch_reading_ease(user_input)
+            traits["flesch_reading_ease"] = textstat.flesch_reading_ease(user_input) # Ensure textstat is imported
             traits["fk_grade"] = textstat.flesch_kincaid_grade(user_input)
-        except Exception:
+        except Exception: # Be specific with exception if textstat has known errors for empty strings
             traits["flesch_reading_ease"] = None
             traits["fk_grade"] = None
 
-        func_count = sum(1 for w in tokens_for_counts if w in FUNCTION_WORDS)
+        func_count = sum(1 for w in tokens_for_counts if w in FUNCTION_WORDS) if tokens_for_counts else 0
         traits["function_word_ratio"] = func_count / max(1, word_count)
 
-        if lexicon:
+        if lexicon: # Check if Empath lexicon was loaded
             try:
                 e_cats = lexicon.analyze(user_input, normalize=True) or {}
                 traits.update({
@@ -272,8 +294,8 @@ def detect_style_traits(user_input: str) -> dict:
                     "empath_cognitive": e_cats.get("cognitive_processes", 0.0),
                     "empath_affect": e_cats.get("affect", 0.0)
                 })
-            except Exception as e:
-                print(f"WARNING (common.py - detect_style_traits): Empath analysis failed: {e}")
+            except Exception as e_empath:
+                print(f"WARNING (common.py - detect_style_traits): Empath analysis failed: {e_empath}")
                 traits.update({"empath_social": None, "empath_cognitive": None, "empath_affect": None})
         else:
              traits.update({"empath_social": None, "empath_cognitive": None, "empath_affect": None})
@@ -286,7 +308,12 @@ def detect_style_traits(user_input: str) -> dict:
 
     except Exception as e:
         print(f"ERROR (common.py - detect_style_traits): Unhandled exception: {e}")
-        return {"error": str(e), "word_count": 0, "informal_score": 0, "hedging_score": 0}
+        # Return a consistent error structure
+        return {
+            "error": str(e), "word_count": 0, "informal_score_regex": 0, "hedging_score": 0,
+            "informality_score_model": None # Ensure all expected keys are present even on error
+            # Add other default trait values if your downstream code expects them
+        }
     return traits
 
 def adjust_sentiment_for_emojis(sentiment: dict, text: str) -> dict:
@@ -341,7 +368,7 @@ def generate_dynamic_prompt(template: str, style_profile: dict, locked_tone: str
 
         # Threshold for model's informality score (0.0 = very formal, 1.0 = very informal)
         # We need to tune this. Let's start with > 0.5 indicating more informal than formal.
-        MODEL_INFORMALITY_THRESHOLD = 0.5 # Adjust this threshold based on observation
+        MODEL_INFORMALITY_THRESHOLD = 0.3 # Adjust this threshold based on observation
 
         used_model_for_informality_decision = False
         tone_instruction_set = False

@@ -32,12 +32,13 @@ from fastapi.middleware.cors import CORSMiddleware
 # Local imports
 import download_nltk_data # Import this only ONCE
 from common import (
-    detect_style_traits, compute_lsm_score, post_process_response, log_event,
+    detect_style_traits, compute_lsm_score, post_process_response, log_event, initialize_formality_model,
     MIN_LSM_TOKENS_FOR_SMOOTHING, LSM_SMOOTHING_ALPHA, LOG_DIR, DEFAULT_BOT_NAME,
-    tokenize_text, TEMPERATURE, MAX_TOKENS, get_user_style_sample, TONE_VARIATIONS
+    tokenize_text, TEMPERATURE, MAX_TOKENS, get_user_style_sample, TONE_VARIATIONS,
 )
 from chatbot_logic import get_openai_response
 
+import psutil
 
 STATIC_AVATAR_DIR = "static/generated"
 os.makedirs(STATIC_AVATAR_DIR, exist_ok=True) # Ensure static dir exists
@@ -71,6 +72,21 @@ app.add_middleware(
 )
 # --- END FastAPI Setup ---
 
+@app.on_event("startup")
+async def startup_event():
+    print("INFO (main.py - startup_event): Application startup sequence initiated.")
+    # Initialize spaCy (it loads on import, but if it had an init function, it'd go here)
+    # The get_spacy_nlp_instance() will retrieve the already loaded instance.
+    print("INFO (main.py - startup_event): spaCy model should be loaded (due to import of spacy_setup).")
+
+    # Initialize Formality Model by calling the function in common.py
+    print("INFO (main.py - startup_event): Triggering formality model initialization in common.py...")
+    try:
+        initialize_formality_model() # <<< THIS IS THE CRITICAL CALL
+        # At this point, common.py's FORMALITY_MODEL, etc., should be populated
+    except Exception as e:
+        print(f"ERROR (main.py - startup_event): Exception during initialize_formality_model(): {e}")
+    print("INFO (main.py - startup_event): Application startup sequence completed.")
 
 # Ensure log directory exists
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -122,6 +138,13 @@ class SessionEndRequest(BaseModel): # Keep this new model
 
 
 # --- Helper Functions (Keep these) ---
+def log_memory_usage():
+    process = psutil.Process(os.getpid())
+    mem_mb = process.memory_info().rss / 1024 / 1024
+    cpu_percent = process.cpu_percent(interval=0.1)  # Slight delay
+    print(f"[RESOURCE] Memory Used: {mem_mb:.2f} MB | CPU: {cpu_percent:.2f}%")
+
+
 def get_time_of_day_label():
     hour = datetime.now().hour
     if 5 <= hour < 12:
@@ -452,6 +475,10 @@ async def set_avatar_details(req: SetAvatarDetailsRequest):
 # --- Message Handling ---
 @app.post("/api/session/message", response_model=MessageResponse)
 async def handle_message(req: MessageRequest):
+    # --- Insert here ---
+    start_time = time.time()
+    log_memory_usage()
+    # -------------------
     sid = req.sessionId
     session = _sessions.get(sid)
     if not session:
@@ -513,6 +540,9 @@ async def handle_message(req: MessageRequest):
         # --- ADD THIS DEBUG PRINT ---
         print(f"DEBUG (main.py - handle_message): User Traits for Prompt Generation: {json.dumps(user_traits, indent=2)}")
         # --- END DEBUG PRINT ---
+
+        duration = time.time() - start_time
+        print(f"[TIMING] /message processed in {duration:.2f} seconds")
 
         return MessageResponse(response=bot_response, styleProfile=user_traits, lsmScore=raw_lsm, smoothedLsmAfterTurn=new_score)
 

@@ -1,13 +1,13 @@
 # backend/formality_model_setup.py
 from transformers import AutoTokenizer, AutoModelForSequenceClassification
-import torch # Or import tensorflow as tf, if you prefer
+import torch
 import os
 
 print("--- formality_model_setup.py starting ---")
 
 FORMALITY_TOKENIZER = None
 FORMALITY_MODEL = None
-MODEL_NAME = "s-nlp/deberta-large-formality-ranker" # Specified model
+MODEL_NAME = "s-nlp/roberta-base-formality-ranker" # Specified model
 
 # Determine device (use GPU if available, otherwise CPU)
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
