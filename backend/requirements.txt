@@ -1,24 +1,30 @@
-# --- Core Dependencies ---
+# requirements.txt
+
+# --- Core Web Framework & Server ---
 fastapi
 uvicorn[standard]
-python-multipart
-requests
+python-multipart # Often needed for FastAPI file uploads, good to keep if used
 python-dotenv
 pydantic
 
-# --- NLP and Analysis ---
+# --- NLP and Text Analysis ---
 nltk
 spacy
+# For spaCy model (this line installs the model directly via pip)
+https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1.tar.gz
 textstat
 emoji
 empath
 torch
 transformers
 
-# --- LLMs & External APIs ---
+# --- LLMs & External APIs (OpenAI, Google Drive) ---
 openai
+google-api-python-client
 google-auth
 google-auth-oauthlib
-google-api-python-client
+# --- System Utilities ---
+psutil # <<< ADDED FOR MEMORY/CPU LOGGING
 
-https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1.tar.gz
+# --- Other/Miscellaneous (if any) ---
+requests # Moved here as it's a general HTTP client, could also be under External APIs
