@@ -345,7 +345,8 @@ async def generate_avatar(req: AvatarRequest):
              raise HTTPException(status_code=500, detail=f"Error writing generated avatar file {filename}: {write_error}")
 
 
-        url = f"/static/generated/{filename}"
+        backend_url = os.getenv("BACKEND_URL", "http://localhost:8000")
+        url = f"{backend_url}/static/generated/{filename}"
         avatar_entry = {"url": url, "prompt": user_prompt}
         session["generated_avatars"].append(avatar_entry)
 

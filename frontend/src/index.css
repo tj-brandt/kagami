@@ -2,6 +2,26 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Import Zen Maru Gothic font */
+@import url('https://fonts.googleapis.com/css2?family=Zen+Maru+Gothic&display=swap');
+
 body {
-    font-family: Helvetica, Arial, sans-serif;
-  }
+  margin: 0;
+  font-family: 'Zen Maru Gothic', sans-serif; /* Apply the font */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* Ensure default text color respects dark mode */
+  @apply text-brand-primary dark:text-dark-text;
+}
+
+/* Base styles for dark mode */
+html.dark {
+  @apply bg-dark-bg;
+}
+
+/* Custom shimmer animation background (originally in App.jsx, now in LoadingScreen) */
+.animate-shimmer {
+  animation: shimmer 1.5s infinite linear;
+  background: linear-gradient(to right, transparent 0%, rgba(255, 255, 255, 0.2) 50%, transparent 100%);
+  background-size: 200% 100%;
+}

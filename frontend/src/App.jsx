@@ -1,481 +1,475 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'; // Import useState, useEffect, useRef, useCallback
-import Intro from "./components/Intro"; // Import Intro component
-import Avatar from './components/Avatar'; // Assuming this is for Premade Selection
-import ChatInterface from './components/ChatInterface'; // Import ChatInterface component
-import axios from 'axios'; // Import axios
-import AvatarGenerated from './components/AvatarGenerated'; // Assuming this is for Generated Selection
-import kagamiLogo from './assets/kagami.png'; // Import logo asset
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import axios from 'axios';
+import kagamiLogo from './assets/kagami.png'; // Light mode logo
+import kagamiDarkLogo from './assets/kagamid.png'; // Dark mode logo (Assuming this path)
 import frog from './assets/avatars/frog.png';
 import panda from './assets/avatars/panda.png';
 import cat from './assets/avatars/cat.png';
 import capybara from './assets/avatars/capybara.png';
 import bird from './assets/avatars/bird.png';
 import elephant from './assets/avatars/elephant.png';
-import kagami from './assets/avatars/kagami.png';
+import kagami from './assets/avatars/kagami.png'; // Default Kagami avatar (for intro/chat)
+
+import { AnimatePresence, motion } from 'framer-motion';
+import SharedLayout from './components/SharedLayout';
+import LoadingScreen from './components/LoadingScreen';
+import IntroductionScreen from './components/IntroductionScreen';
+import AvatarSelectionScreen from './components/AvatarSelectionScreen';
+import ChatScreen from './components/ChatScreen';
+import SurveyScreen from './components/SurveyScreen';
+import ErrorScreen from './components/ErrorScreen';
 
 // --- Constants ---
 const rawApiBaseUrl = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8000';
-const API_BASE_URL = rawApiBaseUrl.replace(/\/$/, ''); // 
+const API_BASE_URL = rawApiBaseUrl.replace(/\/$/, '');
 
-const conditionDetails = { // Define conditionDetails
-  avatar_premade_static: { avatar: true, lsm: false }, 
-  avatar_premade_adaptive: { avatar: true, lsm: true }, 
-  avatar_generated_static: { avatar: true, lsm: false }, 
-  avatar_generated_adaptive: { avatar: true, lsm: true }, 
-  noavatar_static: { avatar: false, lsm: false }, 
-  noavatar_adaptive: { avatar: false, lsm: true } 
+const conditionDetails = {
+  avatar_premade_static: { avatar: true, avatarType: 'premade', lsm: false },
+  avatar_premade_adaptive: { avatar: true, avatarType: 'premade', lsm: true },
+  avatar_generated_static: { avatar: true, avatarType: 'generated', lsm: false },
+  avatar_generated_adaptive: { avatar: true, avatarType: 'generated', lsm: true },
+  noavatar_static: { avatar: false, avatarType: 'none', lsm: false },
+  noavatar_adaptive: { avatar: false, avatarType: 'none', lsm: true }
 };
-const LOGO_TRANSITION_DELAY_MS = 5000; 
-const LOGO_ANIMATION_DURATION_MS = 1000; 
-const POST_ANIMATION_BUFFER_MS = 200; 
+const LOADING_SCREEN_MIN_DISPLAY_TIME_MS = 3000;
+
 // --- END Constants ---
 
 function App() {
-    // State variables
-    const [logoTransitioned, setLogoTransitioned] = useState(false); 
-    const [phase, setPhase] = useState('loading'); 
-    const [sessionId, setSessionId] = useState(null); 
-    const [condition, setCondition] = useState(null); 
-    const [participantId, setParticipantId] = useState(null); 
-    const [initialMessages, setInitialMessages] = useState([]); 
-    const [userAvatarUrl, setUserAvatarUrl] = useState(''); 
-    const [selectedAvatarUrl, setSelectedAvatarUrl] = useState(''); 
-    const [loadingProgress, setLoadingProgress] = useState(0); 
-    const [showIntroBackground, setShowIntroBackground] = useState(false); 
+  // State variables
+  const [isLandscape, setIsLandscape] = useState(false); // This state variable is declared but not used in the provided snippet. Kept as-is.
+  const [isPhone, setIsPhone] = useState(false); // This state variable is declared but not used in the provided snippet. Kept as-is.
+  const [phase, setPhase] = useState('loading');
+  const [sessionId, setSessionId] = useState(null);
+  const [condition, setCondition] = useState(null);
+  const [participantId, setParticipantId] = useState(null);
+  const [initialMessages, setInitialMessages] = useState([]);
+  const [userAvatarUrl, setUserAvatarUrl] = useState('');
+  const [selectedAvatarUrl, setSelectedAvatarUrl] = useState('');
+  const [loadingProgress, setLoadingProgress] = useState(0);
 
-    // Refs for timers/intervals
-    const intervalRef = useRef(null); 
-    const logoTimerRef = useRef(null); 
-    const phaseTransitionTimerRef = useRef(null); 
+  // NEW: Dark mode state
+  const [darkMode, setDarkMode] = useState(() => {
+    if (localStorage.getItem('theme')) {
+      return localStorage.getItem('theme') === 'dark';
+    }
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  });
 
-    // --- Logging Function (Wrapped in useCallback) ---
-    const logFrontendEvent = useCallback(async (eventType, eventData = {}) => {
-        if (!sessionId && !participantId) {
-            if (eventType !== 'app_mounted' && eventType !== 'app_mounted_no_pid' && eventType !== 'invalid_url_params' && eventType !== 'session_start_failed' && eventType !== 'session_start_success') {
-                 console.warn(`Frontend log event "${eventType}" skipped: No session or participant ID available for logging.`);
-                 return;
-            }
+  // Refs for timers/intervals
+  const intervalRef = useRef(null);
+  const loadingScreenTimerRef = useRef(null);
+  const loadingStartTimeRef = useRef(null);
+
+
+  // --- Theme Toggling Function ---
+  const toggleDarkMode = useCallback(() => {
+    setDarkMode(prevMode => {
+      const newMode = !prevMode;
+      localStorage.setItem('theme', newMode ? 'dark' : 'light');
+      return newMode;
+    });
+  }, []);
+
+  // --- Logging Function (Wrapped in useCallback) ---
+  const logFrontendEvent = useCallback(async (eventType, eventData = {}) => {
+    if (!sessionId && !participantId) {
+      if (!['app_mounted', 'app_mounted_no_pid', 'invalid_url_params', 'session_start_failed', 'session_start_success'].includes(eventType)) {
+        console.warn(`Frontend log event "${eventType}" skipped: No session or participant ID available for logging.`);
+        return;
+      }
+    }
+    try {
+      const cleanBaseUrl = API_BASE_URL.replace(/\/$/, '');
+      const payload = {
+        sessionId: sessionId,
+        participantId: participantId,
+        eventType: eventType,
+        eventData: {
+          ...eventData,
+          client_timestamp_utc: new Date().toISOString(),
         }
-        try {
-            const cleanBaseUrl = API_BASE_URL.replace(/\/$/, '');
-            const payload = {
-                sessionId: sessionId, 
-                participantId: participantId, 
-                eventType: eventType,
-                eventData: {
-                    ...eventData,
-                    client_timestamp_utc: new Date().toISOString(),
-                }
-            };
-            await axios.post(`${cleanBaseUrl}/api/log/frontend_event`, payload);
-             console.log(`Frontend event logged: ${eventType}`, payload); 
-        } catch (error) {
-            console.error(`Failed to log frontend event "${eventType}":`, error);
-        }
-    }, [sessionId, participantId, API_BASE_URL]); 
+      };
+      await axios.post(`${cleanBaseUrl}/api/log/frontend_event`, payload);
+      console.log(`Frontend event logged: ${eventType}`, payload);
+    } catch (error) {
+      console.error(`Failed to log frontend event "${eventType}":`, error);
+    }
+  }, [sessionId, participantId]);
 
-    // Helper function to clear the loading progress interval
-    const clearLoadingInterval = () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
+  // Helper function to clear the loading progress interval
+  const clearLoadingInterval = () => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+  };
+
+  // --- API Call Functions (Wrapped in useCallback) ---
+  const startSession = useCallback(async (pid, condName) => {
+    try {
+      const conditionInfoFromUrl = conditionDetails[condName];
+      const cleanBaseUrl = API_BASE_URL.replace(/\/$/, '');
+      const res = await axios.post(`${cleanBaseUrl}/api/session/start`, {
+        participantId: pid,
+        condition: {
+          avatar: conditionInfoFromUrl.avatar,
+          lsm: conditionInfoFromUrl.lsm
+        },
+        conditionName: condName
+      });
+
+      console.log("API Success: Session Started:", res.data.sessionId);
+      clearLoadingInterval();
+      setLoadingProgress(100);
+      setInitialMessages(res.data.initialHistory || []);
+
+      setCondition({ name: condName, ...res.data.condition, avatarType: conditionInfoFromUrl.avatarType });
+      setSessionId(res.data.sessionId); // This state update will trigger Effect 2
+
+      logFrontendEvent('session_start_success', {
+        participant_id_param: pid,
+        condition_string_param: condName,
+        backend_condition_received: res.data.condition
+      });
+
+    } catch (error) {
+      console.error('Error starting session:', error);
+      clearLoadingInterval();
+      clearTimeout(loadingScreenTimerRef.current);
+
+      logFrontendEvent('session_start_failed', {
+        participant_id_param: pid,
+        condition_string_param: condName,
+        error_message: error.message,
+        error_status: error.response?.status,
+        error_data: error.response?.data
+      });
+      setPhase('error');
+    }
+  }, [logFrontendEvent]);
+
+
+  // ************************************************************
+  // ** IMPORTANT FIX: Modified endSession to make the API call **
+  // ************************************************************
+  const endSession = useCallback(async () => { // Make it async
+    console.log(`Session ${sessionId} ending, transitioning to survey phase.`);
+
+    // --- Add this API call to end the session on the backend ---
+    if (sessionId) {
+      try {
+        const cleanBaseUrl = API_BASE_URL.replace(/\/$/, '');
+        await axios.post(`${cleanBaseUrl}/api/session/end`, { sessionId });
+        console.log(`Backend session ${sessionId} successfully ended and log upload initiated.`);
+        logFrontendEvent('backend_session_end_initiated', { sessionId }); // Log success
+      } catch (error) {
+        console.error(`Failed to signal backend session ${sessionId} end:`, error);
+        logFrontendEvent('backend_session_end_failed', { sessionId, error_message: error.message, error_status: error.response?.status }); // Log failure
+      }
+    } else {
+      console.warn("No sessionId available to signal backend session end.");
+      logFrontendEvent('backend_session_end_skipped_no_session_id');
+    }
+    // --- End of API call ---
+
+    setPhase('survey'); // Always transition to survey, even if API call fails
+  }, [sessionId, logFrontendEvent]); // Add logFrontendEvent to dependencies
+  // ************************************************************
+
+
+  // --- Effect 0: Manage body overflow and dark mode class ---
+  useEffect(() => {
+    document.body.style.overflow = phase === 'loading' ? 'hidden' : 'auto';
+
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+
+    return () => {
+      document.body.style.overflow = 'auto';
+      document.documentElement.classList.remove('dark');
+    };
+  }, [phase, darkMode]);
+
+
+  // --- Effect 1: Initial Setup, Parameter Parsing, and Starting Session ---
+  useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const pidFromUrl = urlParams.get('pid');
+    const condNameFromUrl = urlParams.get('cond')?.toLowerCase();
+
+    console.log("App useEffect 1: Initializing...");
+    setLoadingProgress(0);
+    setSessionId(null);
+    setParticipantId(null);
+    setCondition(null);
+
+    clearTimeout(loadingScreenTimerRef.current);
+    clearLoadingInterval();
+    loadingStartTimeRef.current = null;
+
+    const avatarImages = [frog, panda, cat, capybara, bird, elephant, kagami];
+    avatarImages.forEach((src) => {
+      const img = new Image();
+      img.src = src;
+    });
+
+    const tempParticipantId = pidFromUrl;
+    const doInitialLogLocally = async (eventType, eventData) => {
+      try {
+        const cleanBaseUrl = API_BASE_URL.replace(/\/$/, '');
+        await axios.post(`${cleanBaseUrl}/api/log/frontend_event`, {
+          sessionId: null,
+          participantId: pidFromUrl,
+          eventType,
+          eventData,
+        });
+        console.log(`Initial frontend event logged: ${eventType}`, eventData);
+      } catch (error) {
+        console.error(`Failed to log initial frontend event "${eventType}":`, error);
       }
     };
 
-    // --- API Call Functions (Wrapped in useCallback) ---
-    const startSession = useCallback(async (pid, condName) => { 
-      try {
-          const conditionInfoFromUrl = conditionDetails[condName]; 
-          const cleanBaseUrl = API_BASE_URL.replace(/\/$/, ''); 
-          const res = await axios.post(`${cleanBaseUrl}/api/session/start`, {
-              participantId: pid,
-              condition: { 
-                  avatar: conditionInfoFromUrl.avatar,
-                  lsm: conditionInfoFromUrl.lsm 
-              },
-              conditionName: condName
-           });
 
-          console.log("API Success: Session Started:", res.data.sessionId);
-          clearLoadingInterval(); 
-          setLoadingProgress(100); 
-          setInitialMessages(res.data.initialHistory || []); 
-          
-          setCondition({ name: condName, ...res.data.condition }); 
-          setSessionId(res.data.sessionId); 
+    if (pidFromUrl && condNameFromUrl && conditionDetails[condNameFromUrl]) { // Combine pid and condName check here for cleaner flow
+      setParticipantId(pidFromUrl);
+      setCondition({ name: condNameFromUrl, ...conditionDetails[condNameFromUrl] });
 
-          logFrontendEvent('session_start_success', {
-               participant_id_param: pid, 
-               condition_string_param: condName, 
-               backend_condition_received: res.data.condition 
-           });
+      startSession(pidFromUrl, condNameFromUrl);
 
-      } catch (error) {
-          console.error('Error starting session:', error);
-          clearLoadingInterval(); 
-          clearTimeout(logoTimerRef.current); 
-
-           logFrontendEvent('session_start_failed', {
-                participant_id_param: pid,
-                condition_string_param: condName,
-                error_message: error.message,
-                error_status: error.response?.status,
-                error_data: error.response?.data
-           });
-          setPhase('error'); 
-      }
-    }, [logFrontendEvent, API_BASE_URL]);
-
-
-    const endSession = useCallback(() => {
-      console.log(`Session ${sessionId} ending, transitioning to survey phase.`);
-      setPhase('survey'); 
-    }, [sessionId]); 
-
-
-    // --- Effect 0: Manage body overflow based on phase (NEW) ---
-    useEffect(() => {
-        if (phase === 'loading') {
-            document.body.style.overflow = 'hidden';
+      let currentProgress = 0;
+      intervalRef.current = setInterval(() => {
+        currentProgress += 2;
+        if (currentProgress >= 96) {
+          setLoadingProgress(96);
+          clearLoadingInterval();
         } else {
-            document.body.style.overflow = 'auto'; // Or your default overflow
+          setLoadingProgress(currentProgress);
         }
-        // Cleanup on component unmount
-        return () => {
-            document.body.style.overflow = 'auto'; // Or your default overflow
-        };
-    }, [phase]);
+      }, 100);
+
+      loadingStartTimeRef.current = Date.now(); // Store the start time for the loading screen
 
 
-    // --- Effect 1: Initial Setup, Parameter Parsing, and Starting Session ---
-    useEffect(() => { 
-        const urlParams = new URLSearchParams(window.location.search);
-        const pidFromUrl = urlParams.get('pid');
-        const condNameFromUrl = urlParams.get('cond')?.toLowerCase(); 
-    
-        console.log("App useEffect 1: Initializing..."); 
-        setLoadingProgress(0);
-        setLogoTransitioned(false);
-        setSessionId(null); 
-        setShowIntroBackground(false);
-        setParticipantId(null); 
-        setCondition(null); 
-    
-        clearTimeout(logoTimerRef.current);
-        clearTimeout(phaseTransitionTimerRef.current);
-        clearLoadingInterval();
-    
-        const avatarImages = [frog, panda, cat, capybara, bird, elephant, kagami];
-        avatarImages.forEach((src) => {
-            const img = new Image();
-            img.src = src;
-        });
-    
-        const tempParticipantId = pidFromUrl;
-        const doInitialLog = async (eventType, eventData) => {
-            try {
-                const cleanBaseUrl = API_BASE_URL.replace(/\/$/, '');
-                await axios.post(`${cleanBaseUrl}/api/log/frontend_event`, {
-                    sessionId: null,
-                    participantId: tempParticipantId,
-                    eventType,
-                    eventData,
-                });
-                console.log(`Initial frontend event logged: ${eventType}`, eventData);
-            } catch (error) { // <<<--- CORRECTED LINE
-                console.error(`Failed to log initial frontend event "${eventType}":`, error);
-            }
-        };
-    
-        if (tempParticipantId) {
-            doInitialLog('app_mounted', { participant_id_param: tempParticipantId, condition_string_param: condNameFromUrl });
-        } else {
-            doInitialLog('app_mounted_no_pid', { url_params: window.location.search });
-        }
-    
-        if (pidFromUrl && condNameFromUrl && conditionDetails[condNameFromUrl]) {
-            setParticipantId(pidFromUrl);
-            setCondition({ name: condNameFromUrl, ...conditionDetails[condNameFromUrl] });
-    
-            startSession(pidFromUrl, condNameFromUrl);
-    
-            let currentProgress = 0;
-            intervalRef.current = setInterval(() => {
-                currentProgress += 2; 
-                if (currentProgress >= 96) {
-                    setLoadingProgress(96);
-                    clearLoadingInterval(); 
-                } else {
-                    setLoadingProgress(currentProgress);
-                }
-            }, 100); 
-    
-            logoTimerRef.current = setTimeout(() => {
-                setLogoTransitioned(true); 
-            }, LOGO_TRANSITION_DELAY_MS);
-    
-        } else {
-            console.error("Missing or invalid pid/cond:", pidFromUrl, condNameFromUrl);
-            doInitialLog('invalid_url_params', { url_params: window.location.search, pid_param: pidFromUrl, cond_param: condNameFromUrl });
-            setPhase('error');
-        }
-    
-        return () => {
-            console.log("App useEffect 1 cleanup");
-            clearLoadingInterval();
-            clearTimeout(logoTimerRef.current);
-            clearTimeout(phaseTransitionTimerRef.current);
-        };
-    }, []); 
+    } else { // Handle invalid params
+      console.error("Missing or invalid pid/cond:", pidFromUrl, condNameFromUrl);
+      doInitialLogLocally('invalid_url_params', { url_params: window.location.search, pid_param: pidFromUrl, cond_param: condNameFromUrl });
+      setPhase('error');
+    }
+
+    // Always log app_mounted, regardless of valid params
+    if (tempParticipantId) {
+        doInitialLogLocally('app_mounted', { participant_id_param: tempParticipantId, condition_string_param: condNameFromUrl });
+    } else {
+        doInitialLogLocally('app_mounted_no_pid', { url_params: window.location.search });
+    }
 
 
-    // --- Effect 2: Handling the Phase Transition from Loading to Intro ---
-    useEffect(() => {
-      if (phase === 'loading' && logoTransitioned && sessionId) {
-        console.log("Phase transition criteria met: loading -> intro");
-        clearTimeout(phaseTransitionTimerRef.current);
-
-        phaseTransitionTimerRef.current = setTimeout(() => {
-          console.log("Initiating phase change to intro");
-          setPhase('intro'); 
-          setTimeout(() => setShowIntroBackground(true), 50);
-           logFrontendEvent('phase_change', { from: 'loading', to: 'intro' });
-
-        }, LOGO_ANIMATION_DURATION_MS + POST_ANIMATION_BUFFER_MS); 
-      }
-
-      return () => {
-          console.log("App useEffect 2 cleanup");
-          clearTimeout(phaseTransitionTimerRef.current);
-      }
-    }, [phase, logoTransitioned, sessionId, logFrontendEvent]);
+    return () => {
+      console.log("App useEffect 1 cleanup");
+      clearLoadingInterval();
+      clearTimeout(loadingScreenTimerRef.current);
+      loadingStartTimeRef.current = null;
+    };
+  }, []); // Empty dependency array: runs only once on mount.
 
 
-    const handleIntroComplete = useCallback(() => {
-        console.log("Intro complete, navigating...");
-        if (!sessionId || !condition) {
-            console.warn("handleIntroComplete called without session or condition.");
-            return; 
-        }
+  // --- Effect 2: Handling the Phase Transition from Loading to Intro (or Error) ---
+  useEffect(() => {
+    if (phase === 'loading' && sessionId) {
+      const now = Date.now();
+      const startTime = loadingStartTimeRef.current || now;
+      const elapsed = now - startTime;
+      const remainingDelay = LOADING_SCREEN_MIN_DISPLAY_TIME_MS - elapsed;
 
-        const nextPhase = condition.avatar ? 'avatar' : 'chat';
-        
-        console.log(`Changing phase from intro to ${nextPhase}`);
-        setPhase(nextPhase);
-        logFrontendEvent('phase_change', { from: 'intro', to: nextPhase, condition_avatar_flag: condition.avatar });
-
-    }, [sessionId, condition, logFrontendEvent]); 
-
-
-    const handleAvatarSelected = useCallback(async (avatarUrl) => { 
-      console.log("Premade avatar selected:", avatarUrl);
-      setSelectedAvatarUrl(avatarUrl); 
-
-      if (sessionId && avatarUrl) { 
-          try {
-              await axios.post(`${API_BASE_URL.replace(/\/$/, '')}/api/session/set_avatar_details`, {
-                  sessionId: sessionId,
-                  avatarUrl: avatarUrl
-              });
-              logFrontendEvent('premade_avatar_details_sent', { avatar_url_selected: avatarUrl });
-          } catch (error) {
-              console.error("Failed to send premade avatar details to backend:", error);
-              logFrontendEvent('premade_avatar_details_send_failed', { 
-                  avatar_url_selected: avatarUrl, 
-                  error_message: error.message,
-                  error_status: error.response?.status 
-                });
-          }
+      if (remainingDelay <= 0) {
+        console.log("Session ID set and minimum loading time met. Transitioning to intro.");
+        clearTimeout(loadingScreenTimerRef.current);
+        setPhase('intro');
+        logFrontendEvent('phase_change', { from: 'loading', to: 'intro' });
       } else {
-          console.warn("Cannot send premade avatar details: missing sessionId or avatarUrl.");
+        console.log(`Session ID set, but waiting for ${remainingDelay}ms for minimum loading time.`);
+        loadingScreenTimerRef.current = setTimeout(() => {
+          setPhase('intro');
+          logFrontendEvent('phase_change', { from: 'loading', to: 'intro' });
+        }, remainingDelay);
       }
+    }
+    if (phase === 'error' && loadingScreenTimerRef.current) {
+        clearTimeout(loadingScreenTimerRef.current);
+    }
 
-      setPhase('chat');
-      logFrontendEvent('phase_change', { from: 'avatar', to: 'chat', avatar_type_flow: 'premade' });
-
-    }, [logFrontendEvent, sessionId, API_BASE_URL]); 
-
-
-     const handleAvatarGenerated = useCallback(async (avatarData) => { 
-        if (!avatarData || !avatarData.url) {
-            console.error("handleAvatarGenerated called with invalid avatarData:", avatarData);
-            logFrontendEvent('generated_avatar_invalid_data_received', { received_data: avatarData });
-            return;
-        }
-        console.log("Generated avatar confirmed:", avatarData.url, "Prompt:", avatarData.prompt);
-        setUserAvatarUrl(avatarData.url); 
-
-        if (sessionId && avatarData.url) { 
-            try {
-                await axios.post(`${API_BASE_URL.replace(/\/$/, '')}/api/session/set_avatar_details`, {
-                    sessionId: sessionId,
-                    avatarUrl: avatarData.url,
-                    avatarPrompt: avatarData.prompt 
-                });
-                logFrontendEvent('generated_avatar_details_sent', { avatar_url_generated: avatarData.url, avatar_prompt_generated: avatarData.prompt });
-            } catch (error) {
-                console.error("Failed to send generated avatar details to backend:", error);
-                logFrontendEvent('generated_avatar_details_send_failed', { 
-                    avatar_url_generated: avatarData.url, 
-                    avatar_prompt_generated: avatarData.prompt,
-                    error_message: error.message,
-                    error_status: error.response?.status
-                });
-            }
-        } else {
-            console.warn("Cannot send generated avatar details: missing sessionId or avatarData.url.");
-        }
-
-        setPhase('chat');
-        logFrontendEvent('phase_change', { from: 'avatar', to: 'chat', avatar_type_flow: 'generated' });
-
-     }, [logFrontendEvent, sessionId, API_BASE_URL]); 
+    return () => {
+      console.log("App useEffect 2 cleanup");
+      clearTimeout(loadingScreenTimerRef.current);
+    };
+  }, [phase, sessionId, logFrontendEvent]);
 
 
-     const handleChatEndSignal = useCallback(() => {
-        console.log("Chat session end signal received from ChatInterface.");
-     }, []); 
+  const handleIntroComplete = useCallback(() => {
+    console.log("Intro complete, navigating...");
+    if (!sessionId || !condition) {
+      console.warn("handleIntroComplete called without session or condition.");
+      return;
+    }
 
-     const renderAvatarComponent = () => {
-        if (!condition || !sessionId) {
-             return (
-                 <div className="flex items-center justify-center min-h-screen"><p>Loading avatar configuration...</p></div>
-             );
-         }
+    const nextPhase = condition.avatar ? 'avatar' : 'chat';
 
-        if (condition.name && condition.name.startsWith('avatar_generated')) {
-            return (
-                <AvatarGenerated
-                    sessionId={sessionId}
-                    onNext={handleAvatarGenerated} 
-                    logFrontendEvent={logFrontendEvent} 
-                 />
-             );
-         } else if (condition.name && condition.name.startsWith('avatar_premade')) {
-             return (
-                 <Avatar
-                     onNext={handleAvatarSelected} 
-                     logFrontendEvent={logFrontendEvent} 
-                  />
-             );
-         }
-         console.error("Unknown avatar type in condition or condition.name missing:", condition);
-         return (
-              <div className="flex items-center justify-center min-h-screen text-red-600"><p>Error: Unknown avatar type or condition name missing.</p></div>
-         );
-     };
+    console.log(`Changing phase from intro to ${nextPhase}`);
+    setPhase(nextPhase);
+    logFrontendEvent('phase_change', { from: 'intro', to: nextPhase, condition_avatar_flag: condition.avatar });
+
+  }, [sessionId, condition, logFrontendEvent]);
 
 
-    // --- Main Render Logic ---
-    return (
-      <div
-          className={`min-h-screen relative transition-colors duration-500 ease-in-out ${
-              phase === 'loading' ? 'bg-white' :
-              showIntroBackground ? 'bg-transparent' : 'bg-white'
-          }`}
-      >
-          <div
-              className={`absolute inset-0 w-full h-full transition-opacity duration-1000 ease-in z-0 ${
-                  showIntroBackground ? 'opacity-100' : 'opacity-0'
-              }`}
-              style={{
-                backgroundColor: 'white',
-              }}
-          />
+  const handleAvatarSelected = useCallback(async (avatarUrl) => {
+    console.log("Premade avatar selected:", avatarUrl);
+    setSelectedAvatarUrl(avatarUrl);
 
-          {(phase === 'loading' || phase === 'intro') && (
-              <div
-                  className={`
-                      absolute z-20 transition-all ease-in-out
-                      duration-${LOGO_ANIMATION_DURATION_MS}
-                      overflow-hidden
-                      ${logoTransitioned || phase === 'intro' ?
-                          'w-[200px] sm:w-[200px] top-4 left-1/2 transform -translate-x-1/2 sm:left-8 sm:translate-x-0' :
-                          'w-[300px] sm:w-[500px] top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2'
-                      }
-                  `}
-              >
-                  <img
-                      src={kagamiLogo} 
-                      alt="Kagami Logo"
-                      className="w-full h-auto object-contain block relative z-10"
-                  />
-                  {phase === 'loading' && !logoTransitioned && (
-                      <div
-                         className="absolute inset-0 w-full h-full pointer-events-none z-20
-                                   bg-gradient-to-r from-transparent via-white to-transparent
-                                   animate-shimmer"
-                         />
-                  )}
-              </div>
-          )}
+    if (sessionId && avatarUrl) {
+      try {
+        await axios.post(`${API_BASE_URL.replace(/\/$/, '')}/api/session/set_avatar_details`, {
+          sessionId: sessionId,
+          avatarUrl: avatarUrl
+        });
+        logFrontendEvent('premade_avatar_details_sent', { avatar_url_selected: avatarUrl });
+      } catch (error) {
+        console.error("Failed to send premade avatar details to backend:", error);
+        logFrontendEvent('premade_avatar_details_send_failed', {
+          avatar_url_selected: avatarUrl,
+          error_message: error.message,
+          error_status: error.response?.status
+        });
+      }
+    } else {
+      console.warn("Cannot send premade avatar details: missing sessionId or avatarUrl.");
+    }
 
+    setPhase('chat');
+    logFrontendEvent('phase_change', { from: 'avatar', to: 'chat', avatar_type_flow: 'premade' });
+
+  }, [logFrontendEvent, sessionId]);
+
+
+  const handleAvatarGenerated = useCallback(async (avatarData) => {
+    if (!avatarData || !avatarData.url) {
+      console.error("handleAvatarGenerated called with invalid avatarData:", avatarData);
+      logFrontendEvent('generated_avatar_invalid_data_received', { received_data: avatarData });
+      return;
+    }
+    console.log("Generated avatar confirmed:", avatarData.url, "Prompt:", avatarData.prompt);
+    setUserAvatarUrl(avatarData.url);
+
+    if (sessionId && avatarData.url) {
+      try {
+        await axios.post(`${API_BASE_URL.replace(/\/$/, '')}/api/session/set_avatar_details`, {
+          sessionId: sessionId,
+          avatarUrl: avatarData.url,
+          avatarPrompt: avatarData.prompt
+        });
+        logFrontendEvent('generated_avatar_details_sent', { avatar_url_generated: avatarData.url, avatar_prompt_generated: avatarData.prompt });
+      } catch (error) {
+        console.error("Failed to send generated avatar details to backend:", error);
+        logFrontendEvent('generated_avatar_details_send_failed', {
+          avatar_url_generated: avatarData.url,
+          avatar_prompt_generated: avatarData.prompt,
+          error_message: error.message,
+          error_status: error.response?.status
+        });
+      }
+    } else {
+      console.warn("Cannot send generated avatar details: missing sessionId or avatarData.url.");
+    }
+
+    setPhase('chat');
+    logFrontendEvent('phase_change', { from: 'avatar', to: 'chat', avatar_type_flow: 'generated' });
+
+  }, [logFrontendEvent, sessionId]);
+
+
+  const handleChatEndSignal = useCallback(() => {
+    console.log("Chat session end signal received from ChatInterface.");
+    endSession(); // Call endSession here to transition to survey AND signal backend
+    logFrontendEvent('chat_session_ended', { reason: 'timer_expired' });
+  }, [endSession, logFrontendEvent]);
+
+
+  // --- Main Render Logic ---
+  return (
+    <SharedLayout
+      darkMode={darkMode}
+      toggleDarkMode={toggleDarkMode}
+      showNavbar={phase !== 'loading'} // Keep this as is
+      allowMainOverflow={phase === 'chat'} // This line was already present
+    >
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={phase}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.4 }}
+          className="w-full h-full"
+        >
           {phase === 'loading' && (
-              // MODIFIED: Loading bar container classes for mobile positioning
-              <div className="absolute left-0 w-full flex flex-col items-center z-30 px-4 sm:px-0 bottom-[20vh] sm:bottom-10 sm:pb-10">
-                   {/* MODIFIED: Reduced margin-bottom for "Loading..." text on mobile */}
-                   {!logoTransitioned && <p className="text-gray-700 text-lg mb-4 sm:mb-10">Loading...</p>}
-                   <div className="w-3/4 max-w-md h-2 bg-gray-200 rounded overflow-hidden mb-2">
-                       <div className="h-full bg-blue-500 rounded transition-width duration-150 ease-linear" style={{ width: `${loadingProgress}%` }} />
-                   </div>
-                   <p className="text-gray-600 text-sm">Loading... {loadingProgress}%</p>
-              </div>
+            <LoadingScreen
+              loadingProgress={loadingProgress}
+              kagamiLogo={darkMode ? kagamiDarkLogo : kagamiLogo}
+              darkMode={darkMode}
+            />
           )}
 
-          <div className="relative z-10">
-              {phase === 'intro' && condition && ( 
-                  <Intro 
-                      condition={condition.name} 
-                      logFrontendEvent={logFrontendEvent} 
-                      onContinue={handleIntroComplete} 
-                  />
-              )}
+          {phase === 'intro' && condition && (
+            <IntroductionScreen
+              condition={condition.name}
+              logFrontendEvent={logFrontendEvent}
+              onContinue={handleIntroComplete}
+              kagamiIntroAvatar={kagami}
+            />
+          )}
 
-              {phase === 'avatar' && renderAvatarComponent()}
+          {phase === 'avatar' && condition && sessionId && (
+            <AvatarSelectionScreen
+              condition={condition}
+              sessionId={sessionId}
+              onAvatarSelected={handleAvatarSelected}
+              onAvatarGenerated={handleAvatarGenerated}
+              logFrontendEvent={logFrontendEvent}
+              apiBaseUrl={API_BASE_URL}
+              premadeAvatars={{ frog, panda, cat, capybara, bird, elephant, kagami }}
+            />
+          )}
 
+          {phase === 'chat' && sessionId && condition && participantId ? (
+            <ChatScreen
+              sessionId={sessionId}
+              condition={condition.name} // This is the condition string e.g. "avatar_premade_static"
+              backendCondition={condition} // This is the condition object from conditionDetails + backend
+              participantId={participantId}
+              initialMessages={initialMessages}
+              userAvatarUrl={userAvatarUrl}
+              selectedAvatarUrl={selectedAvatarUrl}
+              apiBaseUrl={API_BASE_URL}
+              logFrontendEvent={logFrontendEvent}
+              onChatEndSignal={handleChatEndSignal}
+              kagamiChatAvatar={kagami}
+              darkMode={darkMode} // This prop is correctly passed for ChatScreen's internal logic
+            />
+          ) : phase === 'chat' && (
+            <div className="flex items-center justify-center h-full w-full">
+              <p className="text-brand-primary dark:text-dark-text">Loading chat interface...</p>
+            </div>
+          )}
 
-              {phase === 'chat' && sessionId && condition && participantId ? ( 
-                  <ChatInterface 
-                     sessionId={sessionId}
-                     condition={condition.name} 
-                     backendCondition={condition}
-                     participantId={participantId}
-                     initialMessages={initialMessages}
-                     userAvatarUrl={userAvatarUrl} 
-                     selectedAvatarUrl={selectedAvatarUrl} 
-                     apiBaseUrl={API_BASE_URL} 
-                     logFrontendEvent={logFrontendEvent} 
-                   />
-              ) : phase === 'chat' && ( 
-                   <div className="flex items-center justify-center min-h-screen"><p>Loading chat interface...</p></div>
-              )}
+          {phase === 'survey' && <SurveyScreen />}
+          {phase === 'error' && <ErrorScreen />}
+        </motion.div>
+      </AnimatePresence>
+    </SharedLayout>
+  );
+}
 
-
-              {phase === 'survey' && (
-                  <div className="flex flex-col items-center justify-center min-h-screen">
-                      <div className="bg-white p-8 rounded-lg shadow-xl text-center max-w-md">
-                          <h2 className="text-2xl font-bold mb-4">Experiment Complete</h2>
-                          <p className="mb-4">Thank you for your participation!</p>
-                          <p>Please click the link below to proceed to the final survey:</p>
-                          <a href="YOUR_SURVEY_URL_HERE" target="_blank" rel="noopener noreferrer" className="inline-block mt-4 px-6 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow hover:bg-blue-700 transition duration-200">
-                              Open Survey
-                          </a>
-                      </div>
-                  </div>
-              )}
-
-               {phase === 'error' && (
-                  <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-white">
-                      <div className="bg-white p-8 rounded-lg shadow-xl text-center max-w-md">
-                          <h2 className="text-2xl font-bold mb-4 text-red-600">Error</h2>
-                          <p className="mb-4">Failed to start the session or invalid parameters provided (pid/cond).</p>
-                          <p>Please check the link or contact the administrator.</p>
-                      </div>
-                  </div>
-               )}
-          </div>
-        </div> 
-    );
-  }
-
-  export default App;
+export default App;
