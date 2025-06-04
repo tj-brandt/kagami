@@ -8,7 +8,8 @@ import cat from './assets/avatars/cat.png';
 import capybara from './assets/avatars/capybara.png';
 import bird from './assets/avatars/bird.png';
 import elephant from './assets/avatars/elephant.png';
-import kagami from './assets/avatars/kagami.png'; // Default Kagami avatar (for intro/chat)
+import kagami from './assets/avatars/kagami.png';
+
 
 import { AnimatePresence, motion } from 'framer-motion';
 import SharedLayout from './components/SharedLayout';

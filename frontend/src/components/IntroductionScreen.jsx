@@ -36,8 +36,13 @@ function IntroductionScreen({ condition, logFrontendEvent, onContinue, kagamiInt
             <p className="mb-2">Just a heads up: this is a friendly chat with Kagami, your virtual chat companion.</p>
             <p className="mb-2">Kagami will do their best to match your vibe and make you feel at home. This isn’t real advice or a real service — it’s just for fun and to help us learn how people experience AI conversations.</p>
             <p className="mb-2">Everything you say stays private and will only be used for research in a safe, confidential way. You can leave whenever you like.</p>
-            <p className="mb-4">You will have 10 minutes to chat before the session ends automatically.</p>
-          </div>
+            <p className="font-semibold mb-4 text-brand-primary dark:text-dark-text">
+                You will have 10 minutes to chat before the session ends automatically.
+                <br/>
+                <span className="text-red-500 dark:text-red-300 font-bold">Please DO NOT leave this chat window.</span>
+                <br/>
+                Once the chat ends, you will be automatically redirected to a final survey.
+            </p>          </div>
         ) : (
           // --- Avatar Layout (Float Right) ---
           <div className="text-left">
@@ -52,8 +57,14 @@ function IntroductionScreen({ condition, logFrontendEvent, onContinue, kagamiInt
               <p className="mb-2">Just a heads up: this is a friendly chat with Kagami, your virtual chat companion.</p>
               <p className="mb-2">Kagami will do their best to match your vibe and make you feel at home. This isn’t real advice or a real service — it’s just for fun and to help us learn how people experience AI conversations.</p>
               <p className="mb-2">Everything you say stays private and will only be used for research in a safe, confidential way. You can leave whenever you like.</p>
-              <p>You will have 10 minutes to chat before the session ends automatically.</p>
-            </div>
+              <p className="font-semibold mb-4 text-brand-primary dark:text-dark-text">
+                You will have 10 minutes to chat before the session ends automatically.
+                <br/>
+                <span className="text-red-500 dark:text-red-300 font-bold">Please DO NOT leave the chat window.</span>
+                <br/>
+                Once the chat ends, you will be automatically redirected to a final survey.
+            </p>
+                        </div>
           </div>
         )}
 

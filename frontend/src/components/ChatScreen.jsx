@@ -23,11 +23,11 @@ function ChatScreen({
   const [inputMessage, setInputMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState(null);
-  const [remainingTime, setRemainingTime] = useState(35); // Short for testing, change to 600 for experiment
+  const [remainingTime, setRemainingTime] = useState(600);
   const [sessionExpired, setSessionExpired] = useState(false);
-  const [sessionEndTriggered, setSessionEndTriggered] = useState(false); // NEW STATE FOR DUPLICATE CALLS
+  const [sessionEndTriggered, setSessionEndTriggered] = useState(false);
   const messagesEndRef = useRef(null);
-  const inputRef = useRef(null); // 👈 For input focus
+  const inputRef = useRef(null);
 
   const backgroundImage = darkMode ? tatamiRoomDark : tatamiRoomLight;
   const chatBubbleAiAvatar = kagamiChatAvatar || kagamiAvatar;
@@ -46,15 +46,12 @@ function ChatScreen({
       setMessages(formatted);
     }
   }, [initialMessages]);
-
-  // COMBINED AUTO-FOCUS EFFECT: Ensures input is focused on load and after messages
-  // and handles potential race conditions with a slight delay.
   useEffect(() => {
     const timeoutId = setTimeout(() => {
       inputRef.current?.focus();
-    }, 100); // Small delay to ensure element is rendered
-    return () => clearTimeout(timeoutId); // Cleanup timeout on unmount
-  }, [messages, isSending]); // Re-focus when messages change (new bot response) or sending state changes
+    }, 100);
+    return () => clearTimeout(timeoutId);
+  }, [messages, isSending]);
 
   // Timer useEffect with sessionEndTriggered flag
   useEffect(() => {
