@@ -34,7 +34,7 @@ import download_nltk_data # Import this only ONCE
 from common import (
     detect_style_traits, compute_lsm_score, post_process_response, log_event, initialize_formality_model,
     MIN_LSM_TOKENS_FOR_SMOOTHING, LSM_SMOOTHING_ALPHA, LOG_DIR, DEFAULT_BOT_NAME,
-    tokenize_text, TEMPERATURE, MAX_TOKENS, get_user_style_sample, TONE_VARIATIONS,
+    tokenize_text, TEMPERATURE, MAX_TOKENS, get_user_style_sample, SESSION_STATE_DIR,
 )
 from chatbot_logic import get_openai_response
 
@@ -42,6 +42,9 @@ import psutil
 
 STATIC_AVATAR_DIR = "static/generated"
 os.makedirs(STATIC_AVATAR_DIR, exist_ok=True) # Ensure static dir exists
+
+STATIC_BASE_IMAGE_DIR = "static/base_images"
+os.makedirs(STATIC_BASE_IMAGE_DIR, exist_ok=True)
 
 # --- OpenAI & Drive Config ---
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
@@ -86,7 +89,9 @@ async def startup_event():
         # At this point, common.py's FORMALITY_MODEL, etc., should be populated
     except Exception as e:
         print(f"ERROR (main.py - startup_event): Exception during initialize_formality_model(): {e}")
+    load_all_session_states()
     print("INFO (main.py - startup_event): Application startup sequence completed.")
+
 
 # Ensure log directory exists
 os.makedirs(LOG_DIR, exist_ok=True)
@@ -144,96 +149,66 @@ def log_memory_usage():
     cpu_percent = process.cpu_percent(interval=0.1)  # Slight delay
     print(f"[RESOURCE] Memory Used: {mem_mb:.2f} MB | CPU: {cpu_percent:.2f}%")
 
+def get_session_state_file_path(session_id: str) -> Path:
+    """Returns the pathlib Path for a given session's state file."""
+    # Ensure the directory exists before constructing path
+    (Path(__file__).parent / SESSION_STATE_DIR).mkdir(exist_ok=True)
+    return Path(__file__).parent / SESSION_STATE_DIR / f"{session_id}.json"
 
-def get_time_of_day_label():
-    hour = datetime.now().hour
-    if 5 <= hour < 12:
-        return "morning"
-    elif 12 <= hour < 17:
-        return "afternoon"
-    elif 17 <= hour < 21:
-        return "evening"
-    return "night"
+def save_session_state(session_id: str):
+    """Saves the current state of a session to a JSON file."""
+    session_data = _sessions.get(session_id)
+    if session_data:
+        try:
+            # We need to make sure 'Path' objects are converted to strings if they are in session_data
+            # for example, 'log_file_path'
+            serializable_data = session_data.copy()
+            if isinstance(serializable_data.get("log_file_path"), Path):
+                serializable_data["log_file_path"] = str(serializable_data["log_file_path"])
+
+            filepath = get_session_state_file_path(session_id)
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(serializable_data, f, ensure_ascii=False, indent=2)
+            # print(f"DEBUG: Session {session_id} state saved to {filepath}")
+        except Exception as e:
+            print(f"ERROR: Failed to save session {session_id} state to disk: {e}")
+            # Optionally log this failure more formally if desired, but it's an internal error
+
+def load_all_session_states():
+    """Loads all existing session states from disk into the _sessions dict."""
+    session_state_dir_path = Path(__file__).parent / SESSION_STATE_DIR
+    session_state_dir_path.mkdir(exist_ok=True) # Ensure directory exists
+    print(f"INFO: Loading existing session states from {session_state_dir_path}...")
+
+    for filepath in session_state_dir_path.iterdir():
+        if filepath.suffix == '.json':
+            try:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    session_data = json.load(f)
+                
+                session_id = session_data.get("sessionId")
+                if session_id:
+                    # IMPORTANT: Convert string paths back to Path objects if needed
+                    if isinstance(session_data.get("log_file_path"), str):
+                        session_data["log_file_path"] = Path(session_data["log_file_path"])
+
+                    _sessions[session_id] = session_data
+                    print(f"INFO: Loaded session {session_id} from {filepath}")
+                else:
+                    print(f"WARNING: Skipping invalid session file {filepath} (no sessionId found)")
+            except json.JSONDecodeError as e:
+                print(f"ERROR: Failed to decode JSON from {filepath}: {e}")
+            except Exception as e:
+                print(f"ERROR: Failed to load session from {filepath}: {e}")
+    print(f"INFO: Loaded {len(_sessions)} active sessions.")
+
+# --- END Session Persistence Functions ---
 
 def generate_natural_greeting():
-    time_label = get_time_of_day_label()
+    greeting_part = "Hey there, I'm Kagami."
+    question_part = "What's on your mind today, or how's your day been so far?" 
     
-    # Simple, friendly base greetings
-    base_greetings = [
-        "Hey there, I'm Kagami.",
-        "Hi, I'm Kagami.",
-        "What's up? I'm Kagami.",
-        "Hey, I'm Kagami. Glad we can chat."
-    ]
-    
-    # Optional, light time-specific observations
-    time_specific_phrases = {
-        "morning": [
-            "Hope your morning's off to a good start!",
-            "Good morning!",
-            "Mornin'!", 
-        ],
-        "afternoon": [
-            "Hope your afternoon is going well.",
-            "Good afternoon!",
-            "How's the afternoon treating you?",
-        ],
-        "evening": [
-            "Hope you're having a good evening.",
-            "Good evening!",
-            "How's your evening shaping up?",
-        ],
-        "night": [
-            "Hope you're having a chill night.",
-            "Getting ready to wind down?",
-            "Late night vibes, huh?",
-        ]
-    }
-
-    # Conversation starters tuned to Gen-Z/Millennial interests
-    # Feel free to expand these lists with more variety!
-    questions = {
-        "morning": [
-            "What's on your playlist this morning?",
-            "Got any cool plans for the day or just vibing?",
-            "First app you opened today, or are you avoiding screens for a bit?",
-            "Coffee, tea, or something else to kickstart the day?",
-            "What kind of energy are you bringing to today?"
-        ],
-        "afternoon": [
-            "How's your day been treating you so far?",
-            "Taking a break or just chilling? What are you up to?",
-            "Seen any good TikToks, memes, or anything interesting online lately?",
-            "What's one song that's been living rent-free in your head today?",
-            "Got anything fun lined up for later or this week?"
-        ],
-        "evening": [
-            "How was your day today?",
-            "Winding down for the evening? What's the plan – music, show, game?",
-            "Got any favorite shows you're binging right now, or a game you're really into?",
-            "What's your go-to way to relax after a busy day?",
-            "Any good music, podcasts, or art you've discovered recently?"
-        ],
-        "night": [
-            "Getting ready to wrap up the day, or still got some late-night energy?",
-            "What's on your mind as the day winds down?",
-            "Any particular playlist, show, or game for these late hours?",
-            "What's your favorite way to chill out before calling it a night?",
-            "Got a comfort show or some Lo-fi beats for the evening?"
-        ]
-    }
-
-    greeting = random.choice(base_greetings)
-    # Randomly decide if to include a time-specific phrase to vary openings
-    time_phrase = ""
-    if random.random() < 0.7: # 70% chance to include a time phrase
-        time_phrase = random.choice(time_specific_phrases.get(time_label, [""]))
-        
-    question = random.choice(questions.get(time_label, ["What's up?", "How's it going?"])) # Fallback question
-
-    if time_phrase:
-        return f"{greeting} {time_phrase} {question}"
-    return f"{greeting} {question}"
+    return f"{greeting_part} {question_part}"
 # --- END Helper Functions ---
 
 
@@ -265,6 +240,20 @@ async def end_session(req: SessionEndRequest):
         # also print so you see it in console
         print(f"[drive-upload] failed for {sid}: {e}")
 
+    filepath = get_session_state_file_path(sid)
+    if filepath.exists():
+        try:
+            os.remove(filepath)
+            print(f"INFO: Deleted session state file: {filepath}")
+        except Exception as e:
+            print(f"ERROR: Failed to delete session state file {filepath}: {e}")
+            log_event({
+                "event_type": "error",
+                "error_source": "session_state_file_deletion_failed",
+                "file_path": str(filepath),
+                "error_message": str(e)
+            }, session_info=session)
+
     # 5) only now remove it from memory
     _sessions.pop(sid, None)
 
@@ -289,7 +278,7 @@ async def generate_avatar(req: AvatarRequest):
         if len(session["generated_avatars"]) >= 5:
             raise HTTPException(status_code=400, detail="Maximum avatar generations reached")
 
-        base_image_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../frontend/src/assets/avatars/kagami.png"))
+        base_image_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../static/base_images/kagami.png"))
         if not os.path.exists(base_image_path):
              error_msg = "Base image not found for avatar generation."
              print(f"Critical Error: {error_msg}")
@@ -415,7 +404,6 @@ async def start_session(req: SessionStartRequest):
             "avatar_url": None, 
             "avatar_prompt": None,
             "generated_avatars": [],
-            "persona_style_tone": random.choice(TONE_VARIATIONS),
         }
         session = _sessions[sid]
 
@@ -438,6 +426,8 @@ async def start_session(req: SessionStartRequest):
             "backend_confirmed_condition_obj": condition_obj_from_req, 
             "initial_greeting": initial_greeting,
         }, session_info=session)
+
+        save_session_state(sid)
 
         return SessionStartResponse(
             sessionId=sid, 
@@ -469,7 +459,7 @@ async def set_avatar_details(req: SetAvatarDetailsRequest):
         log_event_data["avatar_prompt_set"] = req.avatarPrompt 
     
     log_event(log_event_data, session_info=session)
-
+    save_session_state(req.sessionId)
     return {"message": "Avatar details updated successfully."}
 
 
@@ -537,10 +527,8 @@ async def handle_message(req: MessageRequest):
             "lsm_score_smoothed": new_score, "bot_linguistic_traits": bot_traits,
             "style_profile_used": user_traits, "system_instruction_used": system_instruction_used
         }, session_info=session)
-
-        # --- ADD THIS DEBUG PRINT ---
+        save_session_state(sid)
         print(f"DEBUG (main.py - handle_message): User Traits for Prompt Generation: {json.dumps(user_traits, indent=2)}")
-        # --- END DEBUG PRINT ---
 
         duration = time.time() - start_time
         print(f"[TIMING] /message processed in {duration:.2f} seconds")

@@ -7,6 +7,7 @@ import json
 import random
 from datetime import datetime, timezone
 from typing import Optional, Any
+from pathlib import Path
 
 import nltk
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
@@ -38,7 +39,7 @@ def initialize_formality_model():
     else:
         print("INFO (common.py - initialize_formality_model): Formality model components already initialized in common.py.")
 
-# --- Constants (minimal for this example, ensure your full constants are present) ---
+# --- Constants (minimal for this example, ensure constants are present) ---
 DEFAULT_BOT_NAME = "Kagami"
 LOG_DIR = "experiment_logs"
 MIN_LSM_TOKENS_FOR_LSM_CALC = 5
@@ -48,18 +49,7 @@ UNCERTAINTY_THRESHOLD = 0.5
 HEDGING_THRESHOLD = 0.3
 TEMPERATURE = 0.7
 MAX_TOKENS = 512
-TONE_VARIATIONS = [
-    "with a friendly vibe, like chatting with a peer",
-    "like someone who's into current music, a bit of gaming, and good memes",
-    "in a down-to-earth, curious way, like you're genuinely interested",
-    "with the relaxed energy of a chat about anything and everything",
-    "like someone who's easygoing and open to talking about pop culture or just whatever's on your mind",
-    "in a warm and approachable manner, making it feel like a comfortable conversation",
-    "with a hint of lightheartedness, ready to talk about everyday stuff or share a laugh",
-    "like a friend who's happy to listen and chat about common interests",
-    "in an authentic and relatable voice, not like a formal assistant",
-    "with an easygoing, slightly playful tone, curious about what the user is into"
-]
+SESSION_STATE_DIR = "session_state"
 
 # --- Regex Patterns & Function Word Sets (for non-LSM style traits) ---
 INFORMAL_RE = re.compile(
@@ -131,9 +121,7 @@ def get_text_formality_score(text: str) -> Optional[float]:
         return None
 
     if not text or not text.strip():
-        # Optionally, print a debug message or decide how to handle empty input
-        # print("DEBUG (common.py - get_text_formality_score): Empty input text. Returning None.")
-        return None # Or return a default like 0.0 or 0.5 if that makes more sense for your logic
+        return None 
 
     try:
         inputs = FORMALITY_TOKENIZER(text, return_tensors="pt", truncation=True, padding=True, max_length=512)
@@ -145,7 +133,6 @@ def get_text_formality_score(text: str) -> Optional[float]:
 
         # For s-nlp ranker:
         # Logit 0: "formal", Logit 1: "informal"
-        # We want an "informality score", so we take the probability of the "informal" class.
         probabilities = torch.softmax(logits, dim=-1)
         informality_prob = probabilities[0][1].item() # Probability of the second class (informal)
 
@@ -153,7 +140,6 @@ def get_text_formality_score(text: str) -> Optional[float]:
 
     except Exception as e:
         print(f"ERROR (common.py - get_text_formality_score): Error during formality model inference for text '{text[:100]}...': {e}")
-        # Consider more detailed error logging if needed
         return None
 
 
@@ -224,7 +210,6 @@ def detect_style_traits(user_input: str) -> dict:
         informality_score_transformer = get_text_formality_score(user_input)
 
         hedge_matches = HEDGING_RE.findall(lower_input_for_regex)
-        # Ensure INFORMAL_RE is defined. Using IGNORECASE in regex means you can pass user_input directly.
         informal_matches = INFORMAL_RE.findall(user_input)
 
 
@@ -252,7 +237,7 @@ def detect_style_traits(user_input: str) -> dict:
 
         if sia: # Check if sia was successfully initialized
             sent = sia.polarity_scores(user_input)
-            sent = adjust_sentiment_for_emojis(sent, user_input) # Ensure this function is defined
+            sent = adjust_sentiment_for_emojis(sent, user_input)
             traits.update({
                 "sentiment_neg": sent["neg"],
                 "sentiment_neu": sent["neu"],
@@ -312,7 +297,7 @@ def detect_style_traits(user_input: str) -> dict:
         return {
             "error": str(e), "word_count": 0, "informal_score_regex": 0, "hedging_score": 0,
             "informality_score_model": None # Ensure all expected keys are present even on error
-            # Add other default trait values if your downstream code expects them
+            
         }
     return traits
 
@@ -363,11 +348,10 @@ def generate_dynamic_prompt(template: str, style_profile: dict, locked_tone: str
 
     try:
         # --- Informality Handling using the Transformer Model Score ---
-        model_informality_score = style_profile.get("informality_score_model") # This is our new score (0.0 to 1.0)
-        regex_informal_score = style_profile.get("informal_score_regex", 0) # Your original regex score
+        model_informality_score = style_profile.get("informality_score_model") 
+        regex_informal_score = style_profile.get("informal_score_regex", 0) 
 
         # Threshold for model's informality score (0.0 = very formal, 1.0 = very informal)
-        # We need to tune this. Let's start with > 0.5 indicating more informal than formal.
         MODEL_INFORMALITY_THRESHOLD = 0.3 # Adjust this threshold based on observation
 
         used_model_for_informality_decision = False
@@ -378,15 +362,9 @@ def generate_dynamic_prompt(template: str, style_profile: dict, locked_tone: str
             if model_informality_score > MODEL_INFORMALITY_THRESHOLD:
                 instructions.append("Use a slightly casual and relaxed tone, while keeping it warm and welcoming.")
                 tone_instruction_set = True
-            # else: Model considers it more formal, or score is low, so we'll use default formal tone logic below
         
         if not tone_instruction_set:
-            # If model didn't set tone (either no score, or score was below threshold),
-            # you could optionally fallback to regex or just use default.
-            # For simplicity, let's just go to default if model doesn't say "informal".
-            # You could add: 'elif regex_informal_score > 0.3:' here for a fallback.
-            current_tone = locked_tone or random.choice(TONE_VARIATIONS)
-            instructions.append(f"Use a polite and clear tone, {current_tone}.")
+            instructions.append("Maintain a polite, clear, and consistently friendly tone.")
             tone_instruction_set = True
         # --- End Informality Handling ---
 

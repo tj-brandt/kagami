@@ -3,7 +3,7 @@
 # --- Core Web Framework & Server ---
 fastapi
 uvicorn[standard]
-python-multipart # Often needed for FastAPI file uploads, good to keep if used
+python-multipart
 python-dotenv
 pydantic
 
@@ -23,8 +23,7 @@ openai
 google-api-python-client
 google-auth
 google-auth-oauthlib
-# --- System Utilities ---
-psutil # <<< ADDED FOR MEMORY/CPU LOGGING
+requests # General HTTP client, often needed for external APIs like OpenAI's image edits.
 
-# --- Other/Miscellaneous (if any) ---
-requests # Moved here as it's a general HTTP client, could also be under External APIs
+# --- System Utilities ---
+psutil

@@ -1,7 +1,9 @@
+// App.jsx
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
-import kagamiLogo from './assets/kagami.png'; // Light mode logo
-import kagamiDarkLogo from './assets/kagamid.png'; // Dark mode logo (Assuming this path)
+import kagamiLogo from './assets/kagami.png';
+import kagamiDarkLogo from './assets/kagamid.png';
 import frog from './assets/avatars/frog.png';
 import panda from './assets/avatars/panda.png';
 import cat from './assets/avatars/cat.png';
@@ -9,7 +11,8 @@ import capybara from './assets/avatars/capybara.png';
 import bird from './assets/avatars/bird.png';
 import elephant from './assets/avatars/elephant.png';
 import kagami from './assets/avatars/kagami.png';
-
+import roomLight from './assets/room.png';
+import roomDark from './assets/roomd.png';
 
 import { AnimatePresence, motion } from 'framer-motion';
 import SharedLayout from './components/SharedLayout';
@@ -38,8 +41,8 @@ const LOADING_SCREEN_MIN_DISPLAY_TIME_MS = 3000;
 
 function App() {
   // State variables
-  const [isLandscape, setIsLandscape] = useState(false); // This state variable is declared but not used in the provided snippet. Kept as-is.
-  const [isPhone, setIsPhone] = useState(false); // This state variable is declared but not used in the provided snippet. Kept as-is.
+  const [isLandscape, setIsLandscape] = useState(false);
+  const [isPhone, setIsPhone] = useState(false);
   const [phase, setPhase] = useState('loading');
   const [sessionId, setSessionId] = useState(null);
   const [condition, setCondition] = useState(null);
@@ -49,7 +52,9 @@ function App() {
   const [selectedAvatarUrl, setSelectedAvatarUrl] = useState('');
   const [loadingProgress, setLoadingProgress] = useState(0);
 
-  // NEW: Dark mode state
+  // NEW: State for the post survey URL, parsed at App level for fallback
+  const [appLevelPostSurveyUrl, setAppLevelPostSurveyUrl] = useState('');
+
   const [darkMode, setDarkMode] = useState(() => {
     if (localStorage.getItem('theme')) {
       return localStorage.getItem('theme') === 'dark';
@@ -61,7 +66,6 @@ function App() {
   const intervalRef = useRef(null);
   const loadingScreenTimerRef = useRef(null);
   const loadingStartTimeRef = useRef(null);
-
 
   // --- Theme Toggling Function ---
   const toggleDarkMode = useCallback(() => {
@@ -126,7 +130,7 @@ function App() {
       setInitialMessages(res.data.initialHistory || []);
 
       setCondition({ name: condName, ...res.data.condition, avatarType: conditionInfoFromUrl.avatarType });
-      setSessionId(res.data.sessionId); // This state update will trigger Effect 2
+      setSessionId(res.data.sessionId);
 
       logFrontendEvent('session_start_success', {
         participant_id_param: pid,
@@ -151,32 +155,15 @@ function App() {
   }, [logFrontendEvent]);
 
 
-  // ************************************************************
-  // ** IMPORTANT FIX: Modified endSession to make the API call **
-  // ************************************************************
-  const endSession = useCallback(async () => { // Make it async
-    console.log(`Session ${sessionId} ending, transitioning to survey phase.`);
-
-    // --- Add this API call to end the session on the backend ---
-    if (sessionId) {
-      try {
-        const cleanBaseUrl = API_BASE_URL.replace(/\/$/, '');
-        await axios.post(`${cleanBaseUrl}/api/session/end`, { sessionId });
-        console.log(`Backend session ${sessionId} successfully ended and log upload initiated.`);
-        logFrontendEvent('backend_session_end_initiated', { sessionId }); // Log success
-      } catch (error) {
-        console.error(`Failed to signal backend session ${sessionId} end:`, error);
-        logFrontendEvent('backend_session_end_failed', { sessionId, error_message: error.message, error_status: error.response?.status }); // Log failure
-      }
-    } else {
-      console.warn("No sessionId available to signal backend session end.");
-      logFrontendEvent('backend_session_end_skipped_no_session_id');
+  // MODIFIED endSession: Backend session end call is now handled by ChatScreen
+  const endSession = useCallback(async () => {
+    console.log(`App.jsx: Session ${sessionId} ending from App.jsx perspective, transitioning to survey phase.`);
+    // The API call to /api/session/end is NOW HANDLED BY ChatScreen.js when its timer expires.
+    if (sessionId && logFrontendEvent) {
+      logFrontendEvent('app_level_session_end_acknowledged', { sessionId });
     }
-    // --- End of API call ---
-
-    setPhase('survey'); // Always transition to survey, even if API call fails
-  }, [sessionId, logFrontendEvent]); // Add logFrontendEvent to dependencies
-  // ************************************************************
+    setPhase('survey');
+  }, [sessionId, logFrontendEvent]);
 
 
   // --- Effect 0: Manage body overflow and dark mode class ---
@@ -201,12 +188,28 @@ function App() {
     const urlParams = new URLSearchParams(window.location.search);
     const pidFromUrl = urlParams.get('pid');
     const condNameFromUrl = urlParams.get('cond')?.toLowerCase();
+    // NEW: Parse post_survey_url at App level for fallback
+    const postSurveyUrlFromQuery = urlParams.get('post_survey_url');
 
     console.log("App useEffect 1: Initializing...");
     setLoadingProgress(0);
     setSessionId(null);
     setParticipantId(null);
     setCondition(null);
+
+    // NEW: Set the app-level post survey URL state
+    if (postSurveyUrlFromQuery) {
+        try {
+            const decodedUrl = decodeURIComponent(postSurveyUrlFromQuery);
+            setAppLevelPostSurveyUrl(decodedUrl);
+            console.log("App.jsx: Post Survey URL parsed for fallback:", decodedUrl);
+        } catch (e) {
+            console.error("App.jsx: Error decoding post_survey_url:", e, postSurveyUrlFromQuery);
+            // Optionally log this error or set a specific error state for the URL
+            // For now, if decoding fails, appLevelPostSurveyUrl will remain empty
+        }
+    }
+
 
     clearTimeout(loadingScreenTimerRef.current);
     clearLoadingInterval();
@@ -218,15 +221,18 @@ function App() {
       img.src = src;
     });
 
-    const tempParticipantId = pidFromUrl;
-    const doInitialLogLocally = async (eventType, eventData) => {
+    const tempParticipantId = pidFromUrl; // Use temp for initial logging before state is set
+    const doInitialLogLocally = async (eventType, eventData) => { // Renamed for clarity
       try {
         const cleanBaseUrl = API_BASE_URL.replace(/\/$/, '');
         await axios.post(`${cleanBaseUrl}/api/log/frontend_event`, {
-          sessionId: null,
-          participantId: pidFromUrl,
+          sessionId: null, // No session ID at this very early stage
+          participantId: pidFromUrl, // Use pidFromUrl directly for logging
           eventType,
-          eventData,
+          eventData: {
+            ...eventData,
+            client_timestamp_utc: new Date().toISOString(), // Add timestamp here too
+          }
         });
         console.log(`Initial frontend event logged: ${eventType}`, eventData);
       } catch (error) {
@@ -235,9 +241,11 @@ function App() {
     };
 
 
-    if (pidFromUrl && condNameFromUrl && conditionDetails[condNameFromUrl]) { // Combine pid and condName check here for cleaner flow
+    if (pidFromUrl && condNameFromUrl && conditionDetails[condNameFromUrl]) {
       setParticipantId(pidFromUrl);
-      setCondition({ name: condNameFromUrl, ...conditionDetails[condNameFromUrl] });
+      // Condition state is set inside startSession after backend confirmation if needed,
+      // or could be set here optimistically:
+      // setCondition({ name: condNameFromUrl, ...conditionDetails[condNameFromUrl] });
 
       startSession(pidFromUrl, condNameFromUrl);
 
@@ -252,20 +260,19 @@ function App() {
         }
       }, 100);
 
-      loadingStartTimeRef.current = Date.now(); // Store the start time for the loading screen
+      loadingStartTimeRef.current = Date.now();
 
 
-    } else { // Handle invalid params
+    } else {
       console.error("Missing or invalid pid/cond:", pidFromUrl, condNameFromUrl);
       doInitialLogLocally('invalid_url_params', { url_params: window.location.search, pid_param: pidFromUrl, cond_param: condNameFromUrl });
       setPhase('error');
     }
 
-    // Always log app_mounted, regardless of valid params
     if (tempParticipantId) {
-        doInitialLogLocally('app_mounted', { participant_id_param: tempParticipantId, condition_string_param: condNameFromUrl });
+        doInitialLogLocally('app_mounted', { participant_id_param: tempParticipantId, condition_string_param: condNameFromUrl, post_survey_url_param: postSurveyUrlFromQuery });
     } else {
-        doInitialLogLocally('app_mounted_no_pid', { url_params: window.location.search });
+        doInitialLogLocally('app_mounted_no_pid', { url_params: window.location.search, post_survey_url_param: postSurveyUrlFromQuery });
     }
 
 
@@ -392,10 +399,9 @@ function App() {
 
 
   const handleChatEndSignal = useCallback(() => {
-    console.log("Chat session end signal received from ChatInterface.");
-    endSession(); // Call endSession here to transition to survey AND signal backend
-    logFrontendEvent('chat_session_ended', { reason: 'timer_expired' });
-  }, [endSession, logFrontendEvent]);
+    console.log("App.jsx: Chat session end signal received from ChatScreen.");
+    endSession(); // Call the (now simplified) endSession
+  }, [endSession]);
 
 
   // --- Main Render Logic ---
@@ -403,8 +409,8 @@ function App() {
     <SharedLayout
       darkMode={darkMode}
       toggleDarkMode={toggleDarkMode}
-      showNavbar={phase !== 'loading'} // Keep this as is
-      allowMainOverflow={phase === 'chat'} // This line was already present
+      showNavbar={phase !== 'loading'}
+      allowMainOverflow={phase === 'chat'}
     >
       <AnimatePresence mode="wait">
         <motion.div
@@ -440,15 +446,15 @@ function App() {
               onAvatarGenerated={handleAvatarGenerated}
               logFrontendEvent={logFrontendEvent}
               apiBaseUrl={API_BASE_URL}
-              premadeAvatars={{ frog, panda, cat, capybara, bird, elephant, kagami }}
+              premadeAvatars={{ frog, panda, cat, capybara, bird, elephant }}
             />
           )}
 
           {phase === 'chat' && sessionId && condition && participantId ? (
             <ChatScreen
               sessionId={sessionId}
-              condition={condition.name} // This is the condition string e.g. "avatar_premade_static"
-              backendCondition={condition} // This is the condition object from conditionDetails + backend
+              condition={condition.name}
+              backendCondition={condition}
               participantId={participantId}
               initialMessages={initialMessages}
               userAvatarUrl={userAvatarUrl}
@@ -457,7 +463,8 @@ function App() {
               logFrontendEvent={logFrontendEvent}
               onChatEndSignal={handleChatEndSignal}
               kagamiChatAvatar={kagami}
-              darkMode={darkMode} // This prop is correctly passed for ChatScreen's internal logic
+              darkMode={darkMode}
+              rooms={{ roomLight, roomDark }}
             />
           ) : phase === 'chat' && (
             <div className="flex items-center justify-center h-full w-full">
@@ -465,7 +472,8 @@ function App() {
             </div>
           )}
 
-          {phase === 'survey' && <SurveyScreen />}
+          {/* MODIFIED: Pass appLevelPostSurveyUrl to SurveyScreen */}
+          {phase === 'survey' && <SurveyScreen surveyUrl={appLevelPostSurveyUrl} />}
           {phase === 'error' && <ErrorScreen />}
         </motion.div>
       </AnimatePresence>

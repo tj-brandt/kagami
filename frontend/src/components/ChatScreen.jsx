@@ -1,39 +1,65 @@
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { PaperAirplaneIcon } from '@heroicons/react/24/solid';
-import tatamiRoomLight from '../assets/room.png';
-import tatamiRoomDark from '../assets/roomd.png';
 import kagamiAvatar from '../assets/avatars/kagami.png';
 
 function ChatScreen({
   sessionId,
-  condition,
+  condition, // Keep this, useful for context if needed, though not directly for redirect
   backendCondition,
-  participantId,
+  participantId, // Keep this, useful for context if needed
   initialMessages,
   userAvatarUrl,
   selectedAvatarUrl,
   kagamiChatAvatar,
   apiBaseUrl,
-  logFrontendEvent,
-  onChatEndSignal,
-  darkMode
+  logFrontendEvent, // Prop for logging
+  onChatEndSignal, // Prop from App.js
+  darkMode,
+  rooms
 }) {
   const [messages, setMessages] = useState([]);
   const [inputMessage, setInputMessage] = useState('');
   const [isSending, setIsSending] = useState(false);
-  const [error, setError] = useState(null);
-  const [remainingTime, setRemainingTime] = useState(600);
+  const [remainingTime, setRemainingTime] = useState(600); // 10 minutes
   const [sessionExpired, setSessionExpired] = useState(false);
-  const [sessionEndTriggered, setSessionEndTriggered] = useState(false);
+  const [sessionEndTriggered, setSessionEndTriggered] = useState(false); // To ensure end logic runs once
+
+  // --- STATE FOR REDCAP REDIRECT ---
+  const [postSurveyRedirectUrl, setPostSurveyRedirectUrl] = useState('');
+  const [redirectError, setRedirectError] = useState(false); // To show a fallback message
+
   const messagesEndRef = useRef(null);
   const inputRef = useRef(null);
+  const { roomLight, roomDark } = rooms;
 
-  const backgroundImage = darkMode ? tatamiRoomDark : tatamiRoomLight;
+  const backgroundImage = darkMode ? roomDark : roomLight;
   const chatBubbleAiAvatar = kagamiChatAvatar || kagamiAvatar;
   const userChatAvatar = backendCondition.avatarType === 'generated'
     ? userAvatarUrl
     : selectedAvatarUrl;
+
+  // --- PARSE QUERY PARAMETERS ON INITIAL LOAD (for REDCap redirect URL) ---
+  useEffect(() => {
+    const queryParams = new URLSearchParams(window.location.search);
+    const redcapPostUrlFromQuery = queryParams.get('post_survey_url');
+
+    if (redcapPostUrlFromQuery) {
+      try {
+        const decodedUrl = decodeURIComponent(redcapPostUrlFromQuery);
+        setPostSurveyRedirectUrl(decodedUrl);
+        console.log("ChatScreen: REDCap Post Survey URL received and set:", decodedUrl);
+        // Optional: logFrontendEvent('post_survey_url_received', { url: decodedUrl });
+      } catch (e) {
+        console.error("ChatScreen: Error decoding post_survey_url:", e, redcapPostUrlFromQuery);
+        setRedirectError(true); // Treat decoding failure as an error
+      }
+    } else {
+      console.error("CRITICAL: ChatScreen - REDCap post_survey_url not found in query parameters!");
+      setRedirectError(true); // Set error state
+      // Optional: logFrontendEvent('post_survey_url_missing');
+    }
+  }, []); // Empty dependency array: run only once on mount
 
   useEffect(() => {
     if (initialMessages && initialMessages.length > 0) {
@@ -46,36 +72,70 @@ function ChatScreen({
       setMessages(formatted);
     }
   }, [initialMessages]);
+
   useEffect(() => {
     const timeoutId = setTimeout(() => {
-      inputRef.current?.focus();
+      if (!sessionExpired) { // Only focus if session is not expired
+         inputRef.current?.focus();
+      }
     }, 100);
     return () => clearTimeout(timeoutId);
-  }, [messages, isSending]);
+  }, [messages, isSending, sessionExpired]); // Add sessionExpired
 
-  // Timer useEffect with sessionEndTriggered flag
   useEffect(() => {
+    if (!sessionId) {
+      console.warn("ChatScreen: Timer not started, sessionId is missing.");
+      return;
+    }
+
     const timer = setInterval(() => {
       setRemainingTime(prev => {
         if (prev <= 1) {
           clearInterval(timer);
-          setSessionExpired(true);
-          document.body.style.filter = 'grayscale(100%)';
-          // --- IMPORTANT: Only call onChatEndSignal once ---
-          if (!sessionEndTriggered) {
-            setSessionEndTriggered(true); // Set the flag to true
-            onChatEndSignal();
+          if (!sessionEndTriggered) { 
+            setSessionEndTriggered(true); 
+            setSessionExpired(true);      
+            document.body.style.filter = 'grayscale(100%)'; 
+
+            const endSessionFlow = async () => {
+              try {
+                console.log("ChatScreen: Timer expired. Attempting to end session on backend:", sessionId);
+                await axios.post(`${apiBaseUrl}/api/session/end`, { sessionId });
+                console.log("ChatScreen: Backend session end signal sent successfully.");
+                if (logFrontendEvent) logFrontendEvent('backend_session_end_by_timer', { sessionId });
+              } catch (error) {
+                console.error('ChatScreen: Failed to signal session end to backend:', error);
+                if (logFrontendEvent) logFrontendEvent('backend_session_end_by_timer_failed', { sessionId, error: error.message });
+              } finally {
+                if (onChatEndSignal) {
+                    onChatEndSignal();
+                }
+
+                // Redirect after a delay
+                setTimeout(() => {
+                  if (postSurveyRedirectUrl) {
+                    console.log("ChatScreen: Redirecting to REDCap post-survey:", postSurveyRedirectUrl);
+                    window.location.href = postSurveyRedirectUrl;
+                  } else {
+                    console.error("ChatScreen: Cannot redirect. Post-survey URL was not set or found. Fallback message should be shown.");
+                    // `redirectError` should already be true if URL was missing/invalid from mount,
+                    // but ensure it's set if postSurveyRedirectUrl is unexpectedly falsy here.
+                    setRedirectError(true);
+                  }
+                }, 2000); // 2-second delay
+              }
+            };
+            endSessionFlow();
           }
-          // --- END IMPORTANT ---
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
-    return () => clearInterval(timer);
-  }, [onChatEndSignal, sessionEndTriggered]); // Added sessionEndTriggered to deps
 
-  // Scroll to bottom effect
+    return () => clearInterval(timer);
+  }, [sessionId, apiBaseUrl, postSurveyRedirectUrl, onChatEndSignal, sessionEndTriggered, logFrontendEvent]);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
@@ -113,7 +173,7 @@ function ChatScreen({
         }
         return newMessages;
       });
-      setError(null);
+      // setError(null); // If using this for message send error
     } catch (err) {
       const errorMessage = { text: 'Oops, something went wrong. Please try again.', sender: 'bot' };
       setMessages(prev => {
@@ -126,31 +186,67 @@ function ChatScreen({
         }
         return newMessages;
       });
-      setError('Message failed to send.');
+      // setError('Message failed to send.'); // If using this for message send error
+      console.error("ChatScreen: Error sending message:", err); // Log the error
+      if (logFrontendEvent) logFrontendEvent('chat_message_send_failed', { error: err.message });
     } finally {
       setIsSending(false);
-      // No need for inputRef.current?.focus() here, as the combined useEffect handles it
-      // when `isSending` changes.
     }
   };
 
   const noAvatar = !backendCondition.avatar;
 
+  // --- UI FOR REDIRECT ERROR ---
+  if (sessionExpired && redirectError && !postSurveyRedirectUrl) {
+    return (
+      <div style={{
+          width: '100%', height: '100vh', display: 'flex',
+          flexDirection: 'column', justifyContent: 'center', alignItems: 'center',
+          textAlign: 'center', padding: '20px', fontFamily: 'Arial, sans-serif',
+          backgroundColor: darkMode ? '#1a1a3a' : '#FFF0D0', 
+          color: darkMode ? 'white' : 'black',
+          filter: 'grayscale(100%)' // Keep grayscale
+      }}>
+        <h2>Thank You!</h2>
+        <p>Your chat session has concluded.</p>
+        <p style={{color: 'red', marginTop: '20px'}}>
+          There was an issue automatically redirecting you to the final survey.
+        </p>
+        <p>
+          Please return to the REDCap tab or window you used for the initial survey.
+        </p>
+        <p style={{marginTop: '10px'}}>
+          If you continue to have issues, please contact the research coordinator.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="relative w-full h-full">
+      <div className="fixed top-4 left-1/2 transform -translate-x-1/2 z-50">
+        <div className={`${darkMode ? 'bg-gray-700 text-white' : 'bg-white/80 text-gray-700'} backdrop-blur-sm px-4 py-1 rounded-full text-sm`}>
+          {sessionExpired
+            ? "Chat session ended. Preparing to redirect..."
+            : `Time left: ${Math.floor(remainingTime / 60)
+                .toString()
+                .padStart(2, '0')}:${(remainingTime % 60).toString().padStart(2, '0')}`}
+        </div>
+      </div>
+
       <img
         src={backgroundImage}
         className="absolute -top-[72px] sm:-top-[80px] left-0 right-0 w-full object-cover z-0 pointer-events-none select-none h-[calc(100%+72px)] sm:h-[calc(100%+80px)]"
-        alt="Tatami Background"
+        alt="Background"
       />
 
-      {/* Chat Bubble Box */}
       <div
         className={`absolute z-20 overflow-y-auto px-6 py-4 backdrop-blur-md shadow-md
         ${noAvatar
           ? 'inset-x-4 top-0 bottom-20 bg-[#FFF0D0]/80 dark:bg-[#1a1a3a]/70 rounded-[40px]'
           : 'inset-x-4 max-h-[44vh] top-6 rounded-[40px] bg-[#FFF0D0]/90 dark:bg-[#1a1a3a]/80'
-        }`}
+        }
+        ${sessionExpired ? 'pointer-events-none' : ''}`}
       >
         {messages.map((msg, index) => (
           <div
@@ -158,7 +254,7 @@ function ChatScreen({
             className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'} items-end mb-2`}
           >
             {msg.sender === 'bot' || msg.sender === 'bot-thinking' ? (
-              backendCondition.avatar && ( // Only show Kagami avatar if avatar condition is true
+              backendCondition.avatar && (
                 <img src={chatBubbleAiAvatar} alt="Kagami" className="w-12 h-12 mr-3 rounded-full" />
               )
             ) : null}
@@ -181,7 +277,7 @@ function ChatScreen({
               </div>
             )}
 
-            {msg.sender === 'user' && backendCondition.avatar && ( // Only show user avatar if avatar condition is true
+            {msg.sender === 'user' && backendCondition.avatar && (
               <img src={userChatAvatar} alt="User" className="w-12 h-12 ml-3 rounded-full" />
             )}
           </div>
@@ -189,16 +285,14 @@ function ChatScreen({
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Seated Avatars (conditionally rendered) */}
       {backendCondition.avatar && (
-        <div className="absolute bottom-[80px] w-full flex justify-center items-end z-10 pointer-events-none">
+        <div className={`absolute bottom-[80px] w-full flex justify-center items-end z-10 pointer-events-none ${sessionExpired ? 'opacity-50' : ''}`}>
           <img src={kagamiAvatar} alt="Kagami" className="h-64 object-contain" />
           <img src={userChatAvatar} alt="User" className="h-64 object-contain" />
         </div>
       )}
 
-      {/* Input Bar */}
-      <form onSubmit={sendMessage} className="absolute bottom-0 w-full px-4 py-3 z-50">
+      <form onSubmit={sendMessage} className={`absolute bottom-0 w-full px-4 py-3 z-50 ${sessionExpired ? 'opacity-50 pointer-events-none' : ''}`}>
         <div className="bg-white dark:bg-gray-800 rounded-full shadow-lg flex items-center px-4 py-2 max-w-2xl mx-auto">
           <input
             ref={inputRef}
@@ -219,22 +313,12 @@ function ChatScreen({
         </div>
       </form>
 
-      {/* Typing animation keyframes */}
       <style>{`
-        .animate-pulse-dots span {
-          opacity: 0;
-          animation: blink-dots 1.4s infinite;
-        }
-
+        .animate-pulse-dots span { opacity: 0; animation: blink-dots 1.4s infinite; }
         .animate-pulse-dots .dot1 { animation-delay: 0s; }
         .animate-pulse-dots .dot2 { animation-delay: 0.2s; }
         .animate-pulse-dots .dot3 { animation-delay: 0.4s; }
-
-        @keyframes blink-dots {
-          0%, 25% { opacity: 0; }
-          50% { opacity: 1; }
-          75%, 100% { opacity: 0; }
-        }
+        @keyframes blink-dots { 0%, 25% { opacity: 0; } 50% { opacity: 1; } 75%, 100% { opacity: 0; } }
       `}</style>
     </div>
   );

@@ -1,0 +1,24 @@
+{
+  "participantId": "1234",
+  "sessionId": "9093af67-9b8f-4764-9777-bab7a5fbd302",
+  "condition": {
+    "avatar": true,
+    "lsm": true
+  },
+  "condition_name_from_frontend": "avatar_premade_adaptive",
+  "condition_iv_avatar_type": "premade",
+  "condition_iv_lsm_type": "adaptive",
+  "log_file_path": "experiment_logs/participant_1234_9093af67-9b8f-4764-9777-bab7a5fbd302.jsonl",
+  "turn_number": 0,
+  "smoothed_lsm_score": 0.5,
+  "history": [
+    {
+      "role": "assistant",
+      "content": "Hey there, I'm Kagami. What's on your mind today, or how's your day been so far?",
+      "turn_number": 0
+    }
+  ],
+  "avatar_url": null,
+  "avatar_prompt": null,
+  "generated_avatars": []
+}
