@@ -14,7 +14,6 @@ backend/nltk_data/
 backend/experiment_logs/ 
 backend/service_account.json
 backend/credentials.json 
-# backend/credentials.json # You had this, if it's different from service_account.json and sensitive, keep it
 
 # Node / Frontend specific
 node_modules/ # General node_modules, will cover frontend/node_modules too

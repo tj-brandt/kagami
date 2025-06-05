@@ -33,8 +33,9 @@ function ChatScreen({
   const inputRef = useRef(null);
   const { roomLight, roomDark } = rooms;
 
-  const backgroundImage = darkMode ? roomDark : roomLight;
-  const chatBubbleAiAvatar = kagamiChatAvatar || kagamiAvatar;
+  const { roomLightWebP, roomDarkWebP, roomLightPNG, roomDarkPNG } = rooms;
+  const currentLightImage = darkMode ? roomDarkPNG : roomLightPNG;
+  const currentWebpImage = darkMode ? roomDarkWebP : roomLightWebP;  const chatBubbleAiAvatar = kagamiChatAvatar || kagamiAvatar;
   const userChatAvatar = backendCondition.avatarType === 'generated'
     ? userAvatarUrl
     : selectedAvatarUrl;
@@ -234,11 +235,14 @@ function ChatScreen({
         </div>
       </div>
 
-      <img
-        src={backgroundImage}
+      <picture>
+            <source srcSet={currentWebpImage} type="image/webp" />
+            <img
+                src={currentLightImage}
         className="absolute -top-[72px] sm:-top-[80px] left-0 right-0 w-full object-cover z-0 pointer-events-none select-none h-[calc(100%+72px)] sm:h-[calc(100%+80px)]"
         alt="Background"
       />
+        </picture>
 
       <div
         className={`absolute z-20 overflow-y-auto px-6 py-4 backdrop-blur-md shadow-md

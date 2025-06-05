@@ -278,7 +278,7 @@ async def generate_avatar(req: AvatarRequest):
         if len(session["generated_avatars"]) >= 5:
             raise HTTPException(status_code=400, detail="Maximum avatar generations reached")
 
-        base_image_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "../static/base_images/kagami.png"))
+        base_image_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "static/base_images/kagami.png"))
         if not os.path.exists(base_image_path):
              error_msg = "Base image not found for avatar generation."
              print(f"Critical Error: {error_msg}")

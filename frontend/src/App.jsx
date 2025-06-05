@@ -11,8 +11,10 @@ import capybara from './assets/avatars/capybara.png';
 import bird from './assets/avatars/bird.png';
 import elephant from './assets/avatars/elephant.png';
 import kagami from './assets/avatars/kagami.png';
-import roomLight from './assets/room.png';
-import roomDark from './assets/roomd.png';
+import roomLightWebP from './assets/room.webp';
+import roomDarkWebP from './assets/roomd.webp';
+import roomLightPNG from './assets/room.png';
+import roomDarkPNG from './assets/roomd.png';
 
 import { AnimatePresence, motion } from 'framer-motion';
 import SharedLayout from './components/SharedLayout';
@@ -464,7 +466,7 @@ function App() {
               onChatEndSignal={handleChatEndSignal}
               kagamiChatAvatar={kagami}
               darkMode={darkMode}
-              rooms={{ roomLight, roomDark }}
+              rooms={{ roomDarkPNG, roomDarkWebP, roomLightWebP, roomLightPNG }}
             />
           ) : phase === 'chat' && (
             <div className="flex items-center justify-center h-full w-full">
