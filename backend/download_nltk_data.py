@@ -15,9 +15,6 @@ RESOURCES_TO_DOWNLOAD = {
         "check_path": "sentiment/vader_lexicon.zip", # Path NLTK uses for find()
         "zip_name": "vader_lexicon.zip" # Actual name of the zip file in its category folder
         }
-    # Add 'wordnet' here if you start using NLTK's WordNetLemmatizer, for example:
-    # "wordnet": {"id": "wordnet", "check_path": "corpora/wordnet.zip", "zip_name": "wordnet.zip"},
-    # "omw-1.4": {"id": "omw-1.4", "check_path": "corpora/omw-1.4.zip", "zip_name": "omw-1.4.zip"}, # Often needed with wordnet
 }
 
 def ensure_project_nltk_data_path_configured():

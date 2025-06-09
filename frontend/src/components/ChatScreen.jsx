@@ -25,7 +25,7 @@ function ChatScreen({
   const [sessionExpired, setSessionExpired] = useState(false);
   const [sessionEndTriggered, setSessionEndTriggered] = useState(false); // To ensure end logic runs once
 
-  // --- STATE FOR REDCAP REDIRECT ---
+  // --- STATE FOR QUALTRICS REDIRECT ---
   const [postSurveyRedirectUrl, setPostSurveyRedirectUrl] = useState('');
   const [redirectError, setRedirectError] = useState(false); // To show a fallback message
 
@@ -40,23 +40,23 @@ function ChatScreen({
     ? userAvatarUrl
     : selectedAvatarUrl;
 
-  // --- PARSE QUERY PARAMETERS ON INITIAL LOAD (for REDCap redirect URL) ---
+  // --- PARSE QUERY PARAMETERS ON INITIAL LOAD (for QUALTRICS redirect URL) ---
   useEffect(() => {
     const queryParams = new URLSearchParams(window.location.search);
-    const redcapPostUrlFromQuery = queryParams.get('post_survey_url');
+    const qualtricsPostUrlFromQuery = queryParams.get('post_survey_url');
 
-    if (redcapPostUrlFromQuery) {
+    if (qualtricsPostUrlFromQuery) {
       try {
-        const decodedUrl = decodeURIComponent(redcapPostUrlFromQuery);
+        const decodedUrl = decodeURIComponent(qualtricsPostUrlFromQuery);
         setPostSurveyRedirectUrl(decodedUrl);
-        console.log("ChatScreen: REDCap Post Survey URL received and set:", decodedUrl);
+        console.log("ChatScreen: Qualtrics Post Survey URL received and set:", decodedUrl);
         // Optional: logFrontendEvent('post_survey_url_received', { url: decodedUrl });
       } catch (e) {
-        console.error("ChatScreen: Error decoding post_survey_url:", e, redcapPostUrlFromQuery);
+        console.error("ChatScreen: Error decoding post_survey_url:", e, qualtricsPostUrlFromQuery);
         setRedirectError(true); // Treat decoding failure as an error
       }
     } else {
-      console.error("CRITICAL: ChatScreen - REDCap post_survey_url not found in query parameters!");
+      console.error("CRITICAL: ChatScreen - Qualtrics post_survey_url not found in query parameters!");
       setRedirectError(true); // Set error state
       // Optional: logFrontendEvent('post_survey_url_missing');
     }
@@ -115,7 +115,7 @@ function ChatScreen({
                 // Redirect after a delay
                 setTimeout(() => {
                   if (postSurveyRedirectUrl) {
-                    console.log("ChatScreen: Redirecting to REDCap post-survey:", postSurveyRedirectUrl);
+                    console.log("ChatScreen: Redirecting to Qualtrics post-survey:", postSurveyRedirectUrl);
                     window.location.href = postSurveyRedirectUrl;
                   } else {
                     console.error("ChatScreen: Cannot redirect. Post-survey URL was not set or found. Fallback message should be shown.");
@@ -214,7 +214,7 @@ function ChatScreen({
           There was an issue automatically redirecting you to the final survey.
         </p>
         <p>
-          Please return to the REDCap tab or window you used for the initial survey.
+          Please return to the Qualtrics tab or window you used for the initial survey.
         </p>
         <p style={{marginTop: '10px'}}>
           If you continue to have issues, please contact the research coordinator.

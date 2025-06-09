@@ -36,3 +36,8 @@ logs/
 .idea/ # For JetBrains IDEs
 *.suo
 *.user
+
+backend/session_state/
+backend/static/generated/
+*.bfg-report/
+kagami.git/

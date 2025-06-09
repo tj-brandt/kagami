@@ -52,7 +52,7 @@ function IntroductionScreen({ condition, logFrontendEvent, onContinue, kagamiInt
               <img
                 src={kagamiIntroAvatar}
                 alt="Kagami"
-                className="float-right w-48 h-48 ml-4 mb-2 object-contain"
+                className="float-right w-48 h-48 ml-0 mb-0 object-contain"
               />
               <p className="mb-2">Just a heads up: this is a friendly chat with Kagami, your virtual chat companion.</p>
               <p className="mb-2">Kagami will do their best to match your vibe and make you feel at home. This isn’t real advice or a real service — it’s just for fun and to help us learn how people experience AI conversations.</p>

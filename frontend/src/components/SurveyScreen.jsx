@@ -1,5 +1,5 @@
 import React from 'react';
-function SurveyScreen({ surveyUrl }) {
+function SurveyScreen({ qualtricsReturnUrl }) {
 
   return (
     <div className="flex flex-col items-center justify-center h-full w-full bg-bg-light dark:bg-dark-bg text-brand-primary dark:text-dark-text transition-colors duration-500 animate-fadeIn">
@@ -12,13 +12,13 @@ function SurveyScreen({ surveyUrl }) {
           You will be forwarded to the final survey.
         </p>
 
-        {surveyUrl ? (
+        {qualtricsReturnUrl ? (
           <>
             <p className="mb-6 text-brand-primary dark:text-dark-text">
               If you weren't automatically forwarded, please click the link below:
             </p>
             <a
-              href={surveyUrl}
+              href={qualtricsReturnUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="inline-block mt-4 px-6 py-3 bg-brand-primary text-bg-light dark:bg-dark-text dark:text-dark-bg font-semibold rounded-large shadow hover:bg-brand-secondary hover:text-brand-primary dark:hover:bg-dark-surface dark:hover:text-dark-text transition duration-200 border-button border-brand-primary dark:border-dark-text"
@@ -32,7 +32,7 @@ function SurveyScreen({ surveyUrl }) {
               It seems we couldn't automatically redirect you, and a specific survey link was not available.
             </p>
             <p className="mt-4 text-brand-primary dark:text-dark-text">
-              Please return to the REDCap tab or window you used for the initial survey to continue,
+              Please return to the Qualtrics tab or window you used for the initial survey to continue,
               or use the link provided by the research team.
             </p>
             <p className="mt-4 text-sm text-gray-600 dark:text-gray-400">

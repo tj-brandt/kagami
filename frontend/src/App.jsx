@@ -11,6 +11,7 @@ import capybara from './assets/avatars/capybara.png';
 import bird from './assets/avatars/bird.png';
 import elephant from './assets/avatars/elephant.png';
 import kagami from './assets/avatars/kagami.png';
+import kagamicrop from './assets/avatars/kagamicrop.png';
 import roomLightWebP from './assets/room.webp';
 import roomDarkWebP from './assets/roomd.webp';
 import roomLightPNG from './assets/room.png';
@@ -37,6 +38,9 @@ const conditionDetails = {
   noavatar_static: { avatar: false, avatarType: 'none', lsm: false },
   noavatar_adaptive: { avatar: false, avatarType: 'none', lsm: true }
 };
+
+const QUALTRICS_SURVEY_BASE_URL = 'https://youruniversity.qualtrics.com/jfe/form/SV_YOUR_SURVEY_ID';
+
 const LOADING_SCREEN_MIN_DISPLAY_TIME_MS = 3000;
 
 // --- END Constants ---
@@ -56,6 +60,8 @@ function App() {
 
   // NEW: State for the post survey URL, parsed at App level for fallback
   const [appLevelPostSurveyUrl, setAppLevelPostSurveyUrl] = useState('');
+
+  const [qualtricsReturnUrl, setQualtricsReturnUrl] = useState('');
 
   const [darkMode, setDarkMode] = useState(() => {
     if (localStorage.getItem('theme')) {
@@ -113,30 +119,29 @@ function App() {
   };
 
   // --- API Call Functions (Wrapped in useCallback) ---
-  const startSession = useCallback(async (pid, condName) => {
+  const startSession = useCallback(async (pid, avatarType, lsmType) => {
     try {
-      const conditionInfoFromUrl = conditionDetails[condName];
+      // Construct the condition name from the parameters passed to this function
+      const conditionName = `${avatarType}_${lsmType}`;
+
       const cleanBaseUrl = API_BASE_URL.replace(/\/$/, '');
       const res = await axios.post(`${cleanBaseUrl}/api/session/start`, {
         participantId: pid,
-        condition: {
-          avatar: conditionInfoFromUrl.avatar,
-          lsm: conditionInfoFromUrl.lsm
-        },
-        conditionName: condName
+        conditionName: conditionName // Pass the single name to the backend
       });
 
       console.log("API Success: Session Started:", res.data.sessionId);
       clearLoadingInterval();
       setLoadingProgress(100);
       setInitialMessages(res.data.initialHistory || []);
-
-      setCondition({ name: condName, ...res.data.condition, avatarType: conditionInfoFromUrl.avatarType });
+      
+      // Use the condition object returned by the backend as the source of truth
+      setCondition(res.data.condition);
       setSessionId(res.data.sessionId);
 
       logFrontendEvent('session_start_success', {
         participant_id_param: pid,
-        condition_string_param: condName,
+        condition_string_sent: conditionName,
         backend_condition_received: res.data.condition
       });
 
@@ -147,7 +152,9 @@ function App() {
 
       logFrontendEvent('session_start_failed', {
         participant_id_param: pid,
-        condition_string_param: condName,
+        // Log the types that were passed in, for debugging
+        avatar_type_param: avatarType, 
+        lsm_type_param: lsmType,
         error_message: error.message,
         error_status: error.response?.status,
         error_data: error.response?.data
@@ -185,106 +192,85 @@ function App() {
   }, [phase, darkMode]);
 
 
-  // --- Effect 1: Initial Setup, Parameter Parsing, and Starting Session ---
+  // --- Effect 1: *** THE MAIN CHANGE IS HERE *** Initial Setup & Parameter Parsing ---
   useEffect(() => {
+    // 1. Parse all new parameters from Qualtrics
     const urlParams = new URLSearchParams(window.location.search);
-    const pidFromUrl = urlParams.get('pid');
-    const condNameFromUrl = urlParams.get('cond')?.toLowerCase();
-    // NEW: Parse post_survey_url at App level for fallback
-    const postSurveyUrlFromQuery = urlParams.get('post_survey_url');
+    const pidFromUrl = urlParams.get('PROLIFIC_PID'); // Case-sensitive, match Qualtrics
+    const avatarTypeFromUrl = urlParams.get('avatar')?.toLowerCase();
+    const lsmTypeFromUrl = urlParams.get('lsm')?.toLowerCase();
+    const responseIdFromUrl = urlParams.get('responseid'); 
 
-    console.log("App useEffect 1: Initializing...");
+
+    console.log("App.jsx: Initializing with URL params:", {
+        pid: pidFromUrl,
+        avatar: avatarTypeFromUrl,
+        lsm: lsmTypeFromUrl,
+        responseId: responseIdFromUrl
+    });
+    
+    // Reset state on mount
     setLoadingProgress(0);
     setSessionId(null);
     setParticipantId(null);
     setCondition(null);
 
-    // NEW: Set the app-level post survey URL state
-    if (postSurveyUrlFromQuery) {
-        try {
-            const decodedUrl = decodeURIComponent(postSurveyUrlFromQuery);
-            setAppLevelPostSurveyUrl(decodedUrl);
-            console.log("App.jsx: Post Survey URL parsed for fallback:", decodedUrl);
-        } catch (e) {
-            console.error("App.jsx: Error decoding post_survey_url:", e, postSurveyUrlFromQuery);
-            // Optionally log this error or set a specific error state for the URL
-            // For now, if decoding fails, appLevelPostSurveyUrl will remain empty
-        }
+    // 2. Construct and save the Qualtrics return URL
+    if (responseIdFromUrl) {
+      const returnUrl = `${QUALTRICS_SURVEY_BASE_URL}?Q_R=${responseIdFromUrl}&Q_R_DEL=1`;
+      setQualtricsReturnUrl(returnUrl);
+      console.log("App.jsx: Constructed Qualtrics return URL:", returnUrl);
+    } else {
+      console.error("App.jsx: CRITICAL - Missing 'responseid' from Qualtrics. Cannot return participant.");
+      // You might want to log this or show an error
     }
 
-
-    clearTimeout(loadingScreenTimerRef.current);
-    clearLoadingInterval();
-    loadingStartTimeRef.current = null;
-
-    const avatarImages = [frog, panda, cat, capybara, bird, elephant, kagami];
-    avatarImages.forEach((src) => {
-      const img = new Image();
-      img.src = src;
-    });
-
-    const tempParticipantId = pidFromUrl; // Use temp for initial logging before state is set
-    const doInitialLogLocally = async (eventType, eventData) => { // Renamed for clarity
-      try {
-        const cleanBaseUrl = API_BASE_URL.replace(/\/$/, '');
-        await axios.post(`${cleanBaseUrl}/api/log/frontend_event`, {
-          sessionId: null, // No session ID at this very early stage
-          participantId: pidFromUrl, // Use pidFromUrl directly for logging
-          eventType,
-          eventData: {
-            ...eventData,
-            client_timestamp_utc: new Date().toISOString(), // Add timestamp here too
-          }
-        });
-        console.log(`Initial frontend event logged: ${eventType}`, eventData);
-      } catch (error) {
-        console.error(`Failed to log initial frontend event "${eventType}":`, error);
-      }
-    };
-
-
-    if (pidFromUrl && condNameFromUrl && conditionDetails[condNameFromUrl]) {
+    // 3. Validate parameters and start the session
+    if (pidFromUrl && avatarTypeFromUrl && lsmTypeFromUrl && responseIdFromUrl) {
       setParticipantId(pidFromUrl);
-      // Condition state is set inside startSession after backend confirmation if needed,
-      // or could be set here optimistically:
-      // setCondition({ name: condNameFromUrl, ...conditionDetails[condNameFromUrl] });
+      
+      // Start session with the parsed parameters
+      startSession(pidFromUrl, avatarTypeFromUrl, lsmTypeFromUrl);
 
-      startSession(pidFromUrl, condNameFromUrl);
-
+      // --- Start visual loading progress bar ---
+      loadingStartTimeRef.current = Date.now();
       let currentProgress = 0;
       intervalRef.current = setInterval(() => {
         currentProgress += 2;
         if (currentProgress >= 96) {
           setLoadingProgress(96);
-          clearLoadingInterval();
+          clearInterval(intervalRef.current);
         } else {
           setLoadingProgress(currentProgress);
         }
       }, 100);
-
-      loadingStartTimeRef.current = Date.now();
-
+      
+      logFrontendEvent('app_mounted_success', { 
+        pid_param: pidFromUrl, 
+        avatar_param: avatarTypeFromUrl, 
+        lsm_param: lsmTypeFromUrl, 
+        responseid_param: responseIdFromUrl
+      });
 
     } else {
-      console.error("Missing or invalid pid/cond:", pidFromUrl, condNameFromUrl);
-      doInitialLogLocally('invalid_url_params', { url_params: window.location.search, pid_param: pidFromUrl, cond_param: condNameFromUrl });
+      // If any parameter is missing, it's a critical error
+      console.error("Missing or invalid URL parameters from Qualtrics.");
+      logFrontendEvent('invalid_url_params', {
+        url_params: window.location.search,
+        pid_param: pidFromUrl,
+        avatar_param: avatarTypeFromUrl,
+        lsm_param: lsmTypeFromUrl,
+        responseid_param: responseIdFromUrl
+      });
       setPhase('error');
     }
 
-    if (tempParticipantId) {
-        doInitialLogLocally('app_mounted', { participant_id_param: tempParticipantId, condition_string_param: condNameFromUrl, post_survey_url_param: postSurveyUrlFromQuery });
-    } else {
-        doInitialLogLocally('app_mounted_no_pid', { url_params: window.location.search, post_survey_url_param: postSurveyUrlFromQuery });
-    }
-
-
     return () => {
-      console.log("App useEffect 1 cleanup");
-      clearLoadingInterval();
+      // Cleanup timers
+      clearInterval(intervalRef.current);
       clearTimeout(loadingScreenTimerRef.current);
-      loadingStartTimeRef.current = null;
     };
-  }, []); // Empty dependency array: runs only once on mount.
+  }, []); // Empty dependency array ensures this runs only once on mount.
 
 
   // --- Effect 2: Handling the Phase Transition from Loading to Intro (or Error) ---
@@ -402,7 +388,7 @@ function App() {
 
   const handleChatEndSignal = useCallback(() => {
     console.log("App.jsx: Chat session end signal received from ChatScreen.");
-    endSession(); // Call the (now simplified) endSession
+    endSession(); // This will change the phase to 'survey'
   }, [endSession]);
 
 
@@ -436,7 +422,7 @@ function App() {
               condition={condition.name}
               logFrontendEvent={logFrontendEvent}
               onContinue={handleIntroComplete}
-              kagamiIntroAvatar={kagami}
+              kagamiIntroAvatar={kagamicrop}
             />
           )}
 
@@ -475,7 +461,7 @@ function App() {
           )}
 
           {/* MODIFIED: Pass appLevelPostSurveyUrl to SurveyScreen */}
-          {phase === 'survey' && <SurveyScreen surveyUrl={appLevelPostSurveyUrl} />}
+          {phase === 'survey' && <SurveyScreen surveyUrl={qualtricsReturnUrl} />}
           {phase === 'error' && <ErrorScreen />}
         </motion.div>
       </AnimatePresence>

@@ -99,14 +99,14 @@ _sessions: Dict[str, Dict[str, Any]] = {}
 
 # --- Pydantic Models (MODIFIED & NEW) ---
 class SessionStartRequest(BaseModel):
-    participantId: Optional[str] = None
-    condition: Optional[Dict[str, bool]] = None # e.g., {"avatar": True, "lsm": False}
-    conditionName: Optional[str] = None      # e.g., "avatar_premade_static" - NEW
+    participantId: str # Make this required
+    conditionName: str # Make this required. e.g., "generated_adaptive"
 
 class SessionStartResponse(BaseModel):
     sessionId: str
-    condition: Dict[str, bool] # The {avatar, lsm} object confirmed by backend
+    condition: Dict[str, Any]
     initialHistory: List[Dict[str, Any]]
+
 
 class MessageRequest(BaseModel):
     sessionId: str
@@ -356,89 +356,71 @@ async def generate_avatar(req: AvatarRequest):
 @app.post("/api/session/start", response_model=SessionStartResponse)
 async def start_session(req: SessionStartRequest):
     try:
-        pid = req.participantId.zfill(2) if req.participantId else "00"
+        # First, get the participant ID and generate a session ID
+        pid = req.participantId
         sid = str(uuid.uuid4())
         
-        # Backend condition object, can be overridden by request
-        condition_obj_from_req = req.condition or {"lsm": random.choice([True, False]), "avatar": random.choice([True, False])}
-        
-        avatar_present_in_cond_obj = condition_obj_from_req.get("avatar", False)
-        lsm_enabled_in_cond_obj = condition_obj_from_req.get("lsm", False)
+        # Get the condition name from the frontend request
+        condition_name_from_frontend = req.conditionName.lower()
 
-        # Determine condition_iv_avatar_type based on conditionName from frontend
-        derived_avatar_type = "no_avatar" # Default
-        if req.conditionName:
-            name_lower = req.conditionName.lower()
-            if "premade" in name_lower:
-                derived_avatar_type = "premade"
-            elif "generated" in name_lower:
-                derived_avatar_type = "generated"
-            elif "noavatar" in name_lower: # Explicitly check for noavatar
-                derived_avatar_type = "no_avatar"
-            elif avatar_present_in_cond_obj: 
-                derived_avatar_type = "unknown_but_avatar_present" 
-                print(f"Warning: conditionName '{req.conditionName}' did not specify premade/generated/noavatar, but avatar is present in condition object.")
-        elif avatar_present_in_cond_obj: 
-             derived_avatar_type = "unknown_no_condition_name"
-             print(f"Warning: Avatar is present in condition object, but no conditionName was provided to derive type.")
-        
-        # Ensure avatar_present_in_cond_obj aligns with derived_avatar_type for 'no_avatar'
-        if derived_avatar_type == "no_avatar":
-            condition_obj_from_req["avatar"] = False # Enforce avatar:false for no_avatar conditions
+        # Define the condition logic dictionary
+        condition_details = {
+            "generated_adaptive": {"avatar": True, "lsm": True, "avatarType": "generated"},
+            "generated_static":   {"avatar": True, "lsm": False, "avatarType": "generated"},
+            "premade_adaptive":   {"avatar": True, "lsm": True, "avatarType": "premade"},
+            "premade_static":     {"avatar": True, "lsm": False, "avatarType": "premade"},
+            "none_adaptive":      {"avatar": False, "lsm": True, "avatarType": "none"},
+            "none_static":        {"avatar": False, "lsm": False, "avatarType": "none"},
+        }
 
-        derived_lsm_type = "adaptive" if lsm_enabled_in_cond_obj else "static"
-        
-        log_file_path = os.path.join(LOG_DIR, f"participant_{pid}_{sid}.jsonl")
+        # Now, look up the condition details using the name from the request
+        backend_condition_obj = condition_details.get(condition_name_from_frontend)
+        if not backend_condition_obj:
+            # If the name doesn't match any key, it's an invalid request
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid conditionName provided: '{condition_name_from_frontend}'"
+            )
+
+        # The rest of your logic is correct
+        log_file_path = Path(LOG_DIR) / f"participant_{pid}_{sid}.jsonl"
 
         _sessions[sid] = {
-            "participantId": pid, 
-            "sessionId": sid, 
-            "condition": condition_obj_from_req, 
-            "condition_name_from_frontend": req.conditionName, 
-            "condition_iv_avatar_type": derived_avatar_type, 
-            "condition_iv_lsm_type": derived_lsm_type,
-            "log_file_path": log_file_path, 
-            "turn_number": 0, 
+            "participantId": pid,
+            "sessionId": sid,
+            "condition": backend_condition_obj, # Store the full object
+            "condition_name_from_frontend": condition_name_from_frontend,
+            "log_file_path": log_file_path,
+            "turn_number": 0,
             "smoothed_lsm_score": 0.5,
-            "history": [], 
-            "avatar_url": None, 
+            "history": [],
+            "avatar_url": None,
             "avatar_prompt": None,
             "generated_avatars": [],
         }
         session = _sessions[sid]
 
-        try: 
-            initial_greeting = generate_natural_greeting()
-        except Exception as e:
-            print(f"Error generating natural greeting: {e}")
-            initial_greeting = f"Hey there, I'm {DEFAULT_BOT_NAME}. Glad you could make it."
-
-        session["history"].append({"role": "assistant", "content": initial_greeting, "turn_number": 0}) # avatar_url is not included here initially
+        initial_greeting = generate_natural_greeting()
+        session["history"].append({"role": "assistant", "content": initial_greeting, "turn_number": 0})
 
         log_event({
             "event_type": "session_start_backend",
-            # "participant_id": pid, # Redundant with session_info but good for this specific event
-            # "session_id": sid,   # Redundant
-            "initial_condition_from_request": req.condition, 
-            "condition_name_from_request": req.conditionName, 
-            # "derived_condition_iv_avatar_type": derived_avatar_type, # Now part of session_info
-            # "derived_condition_iv_lsm_type": derived_lsm_type,     # Now part of session_info
-            "backend_confirmed_condition_obj": condition_obj_from_req, 
+            "condition_name_from_request": req.conditionName,
+            "backend_confirmed_condition_obj": backend_condition_obj,
             "initial_greeting": initial_greeting,
         }, session_info=session)
 
         save_session_state(sid)
 
         return SessionStartResponse(
-            sessionId=sid, 
-            condition=condition_obj_from_req, 
+            sessionId=sid,
+            condition=backend_condition_obj,
             initialHistory=session["history"]
         )
 
     except Exception as e:
-        print(f"Critical error during session start: {e}") 
+        print(f"Critical error during session start: {e}")
         raise HTTPException(status_code=500, detail=f"Internal server error during session start: {str(e)}")
-
 
 @app.post("/api/session/set_avatar_details") # NEW ENDPOINT
 async def set_avatar_details(req: SetAvatarDetailsRequest):
