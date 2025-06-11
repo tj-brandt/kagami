@@ -85,30 +85,36 @@ function App() {
   }, []);
 
   // --- Logging Function (Wrapped in useCallback) ---
-  const logFrontendEvent = useCallback(async (eventType, eventData = {}) => {
-    if (!sessionId && !participantId) {
-      if (!['app_mounted', 'app_mounted_no_pid', 'invalid_url_params', 'session_start_failed', 'session_start_success'].includes(eventType)) {
-        console.warn(`Frontend log event "${eventType}" skipped: No session or participant ID available for logging.`);
-        return;
-      }
-    }
-    try {
-      const cleanBaseUrl = API_BASE_URL.replace(/\/$/, '');
-      const payload = {
-        sessionId: sessionId,
-        participantId: participantId,
-        eventType: eventType,
-        eventData: {
-          ...eventData,
-          client_timestamp_utc: new Date().toISOString(),
+  const logFrontendEvent = useCallback(async (eventType, eventData = {}, overrideIds = {}) => {
+  // Use override IDs if provided, otherwise fall back to component state.
+      const sid = overrideIds.sessionId || sessionId;
+      const pid = overrideIds.participantId || participantId;
+
+      if (!sid && !pid) {
+        // Keep your whitelist for events that can be logged without any ID.
+        if (!['app_mounted', 'app_mounted_no_pid', 'invalid_url_params', 'session_start_failed', 'session_start_success'].includes(eventType)) {
+          console.warn(`Frontend log event "${eventType}" skipped: No session or participant ID available for logging.`);
+          return;
         }
-      };
-      await axios.post(`${cleanBaseUrl}/api/log/frontend_event`, payload);
-      console.log(`Frontend event logged: ${eventType}`, payload);
-    } catch (error) {
-      console.error(`Failed to log frontend event "${eventType}":`, error);
-    }
-  }, [sessionId, participantId]);
+      }
+      try {
+        const cleanBaseUrl = API_BASE_URL.replace(/\/$/, '');
+        const payload = {
+          // Pass the determined IDs to the backend.
+          sessionId: sid,
+          participantId: pid,
+          eventType: eventType,
+          eventData: {
+            ...eventData,
+            client_timestamp_utc: new Date().toISOString(),
+          }
+        };
+        await axios.post(`${cleanBaseUrl}/api/log/frontend_event`, payload);
+        console.log(`Frontend event logged: ${eventType}`, payload);
+      } catch (error) {
+        console.error(`Failed to log frontend event "${eventType}":`, error);
+      }
+    }, [sessionId, participantId]); 
 
   // Helper function to clear the loading progress interval
   const clearLoadingInterval = () => {
@@ -140,10 +146,10 @@ function App() {
       setSessionId(res.data.sessionId);
 
       logFrontendEvent('session_start_success', {
-        participant_id_param: pid,
-        condition_string_sent: conditionName,
-        backend_condition_received: res.data.condition
-      });
+      participant_id_param: pid,
+      condition_string_sent: conditionName,
+      backend_condition_received: res.data.condition
+    }, { participantId: pid, sessionId: res.data.sessionId });
 
     } catch (error) {
       console.error('Error starting session:', error);
@@ -164,10 +170,8 @@ function App() {
   }, [logFrontendEvent]);
 
 
-  // MODIFIED endSession: Backend session end call is now handled by ChatScreen
   const endSession = useCallback(async () => {
     console.log(`App.jsx: Session ${sessionId} ending from App.jsx perspective, transitioning to survey phase.`);
-    // The API call to /api/session/end is NOW HANDLED BY ChatScreen.js when its timer expires.
     if (sessionId && logFrontendEvent) {
       logFrontendEvent('app_level_session_end_acknowledged', { sessionId });
     }
@@ -250,7 +254,7 @@ function App() {
         avatar_param: avatarTypeFromUrl, 
         lsm_param: lsmTypeFromUrl, 
         responseid_param: responseIdFromUrl
-      });
+      }, { participantId: pidFromUrl });
 
     } else {
       // If any parameter is missing, it's a critical error
@@ -419,7 +423,7 @@ function App() {
 
           {phase === 'intro' && condition && (
             <IntroductionScreen
-              condition={condition.name}
+              condition={condition}
               logFrontendEvent={logFrontendEvent}
               onContinue={handleIntroComplete}
               kagamiIntroAvatar={kagamicrop}
@@ -441,8 +445,7 @@ function App() {
           {phase === 'chat' && sessionId && condition && participantId ? (
             <ChatScreen
               sessionId={sessionId}
-              condition={condition.name}
-              backendCondition={condition}
+              condition={condition}
               participantId={participantId}
               initialMessages={initialMessages}
               userAvatarUrl={userAvatarUrl}

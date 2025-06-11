@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 function IntroductionScreen({ condition, logFrontendEvent, onContinue, kagamiIntroAvatar }) {
   const [understood, setUnderstood] = useState(false);
 
-  const isNoAvatar = condition?.toLowerCase().includes('noavatar');
+  const isNoAvatar = !condition?.avatar; 
 
   useEffect(() => {
     logFrontendEvent('intro_screen_viewed', { condition_name: condition });

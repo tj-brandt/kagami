@@ -5,9 +5,8 @@ import kagamiAvatar from '../assets/avatars/kagami.png';
 
 function ChatScreen({
   sessionId,
-  condition, // Keep this, useful for context if needed, though not directly for redirect
-  backendCondition,
-  participantId, // Keep this, useful for context if needed
+  condition,
+  participantId,
   initialMessages,
   userAvatarUrl,
   selectedAvatarUrl,
@@ -36,7 +35,7 @@ function ChatScreen({
   const { roomLightWebP, roomDarkWebP, roomLightPNG, roomDarkPNG } = rooms;
   const currentLightImage = darkMode ? roomDarkPNG : roomLightPNG;
   const currentWebpImage = darkMode ? roomDarkWebP : roomLightWebP;  const chatBubbleAiAvatar = kagamiChatAvatar || kagamiAvatar;
-  const userChatAvatar = backendCondition.avatarType === 'generated'
+  const userChatAvatar = condition.avatarType === 'generated'
     ? userAvatarUrl
     : selectedAvatarUrl;
 
@@ -195,7 +194,7 @@ function ChatScreen({
     }
   };
 
-  const noAvatar = !backendCondition.avatar;
+  const noAvatar = !condition.avatar;
 
   // --- UI FOR REDIRECT ERROR ---
   if (sessionExpired && redirectError && !postSurveyRedirectUrl) {
@@ -258,7 +257,7 @@ function ChatScreen({
             className={`flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'} items-end mb-2`}
           >
             {msg.sender === 'bot' || msg.sender === 'bot-thinking' ? (
-              backendCondition.avatar && (
+              condition.avatar && (
                 <img src={chatBubbleAiAvatar} alt="Kagami" className="w-12 h-12 mr-3 rounded-full" />
               )
             ) : null}
@@ -281,7 +280,7 @@ function ChatScreen({
               </div>
             )}
 
-            {msg.sender === 'user' && backendCondition.avatar && (
+            {msg.sender === 'user' && condition.avatar && (
               <img src={userChatAvatar} alt="User" className="w-12 h-12 ml-3 rounded-full" />
             )}
           </div>
@@ -289,7 +288,7 @@ function ChatScreen({
         <div ref={messagesEndRef} />
       </div>
 
-      {backendCondition.avatar && (
+      {condition.avatar && (
         <div className={`absolute bottom-[80px] w-full flex justify-center items-end z-10 pointer-events-none ${sessionExpired ? 'opacity-50' : ''}`}>
           <img src={kagamiAvatar} alt="Kagami" className="h-64 object-contain" />
           <img src={userChatAvatar} alt="User" className="h-64 object-contain" />
