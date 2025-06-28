@@ -1,0 +1,39 @@
+# render.yaml
+
+services:
+  # -----------------
+  #  Backend Service
+  # -----------------
+  - type: web
+    name: kagami-backend
+    env: docker
+    repo: https://github.com/tj-brandt/kagami
+    region: mid-atlantic
+    
+    plan: standard 
+    
+    dockerfilePath: ./backend/Dockerfile
+    branch: main
+    
+    healthCheckPath: /
+    
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.3
+      - key: POETRY_VERSION
+        value: 1.8.2
+      - key: OPENAI_API_KEY
+        sync: false 
+      - key: GOOGLE_DRIVE_FOLDER_ID
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: BACKEND_URL
+        fromService:
+          type: web
+          name: kagami-backend 
+          property: url
+
+    secretFiles:
+      - path: /etc/secrets/service_account.json 
+        name: service_account.json 

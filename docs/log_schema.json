@@ -1,0 +1,52 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Kagami Experiment Log Event",
+  "description": "Schema for a single event entry in the .jsonl log file.",
+  "type": "object",
+  "properties": {
+    "timestamp_utc": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of the event in UTC."
+    },
+    "participant_id": { "type": ["string", "null"] },
+    "session_id": { "type": ["string", "null"] },
+    "turn_number": { "type": ["integer", "null"], "minimum": 0 },
+    "condition_name_from_frontend": { "type": ["string", "null"] },
+    "event_type": {
+      "type": "string",
+      "enum": [
+        "session_start_backend",
+        "user_message",
+        "bot_response",
+        "avatar_generated",
+        "avatar_details_set",
+        "session_end",
+        "error",
+        "intro_screen_viewed",
+        "intro_continue_clicked",
+        "chat_message_sent"
+      ]
+    },
+    "content": { "type": "string", "description": "Text content of a user or bot message." },
+    "user_linguistic_traits": { "$ref": "#/definitions/styleProfile" },
+    "bot_linguistic_traits": { "$ref": "#/definitions/styleProfile" },
+    "lsm_score_raw": { "type": "number" },
+    "lsm_score_smoothed": { "type": "number" },
+    "system_instruction_used": { "type": "string" },
+    "error_source": { "type": "string" },
+    "error_message": { "type": "string" }
+  },
+  "required": ["timestamp_utc", "event_type"],
+  "definitions": {
+    "styleProfile": {
+      "type": "object",
+      "properties": {
+        "word_count": { "type": "integer" },
+        "informality_score_model": { "type": ["number", "null"] },
+        "sentiment_compound": { "type": "number" }
+      },
+      "description": "A subset of the full linguistic style profile."
+    }
+  }
+}

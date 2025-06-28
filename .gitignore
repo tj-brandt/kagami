@@ -1,0 +1,47 @@
+# Python
+*.pyc
+__pycache__/
+*.env # General .env files
+venv/
+.venv/ # Common alternative to venv
+# Pipfile.lock
+# poetry.lock
+
+# Backend specific
+backend/.env
+backend/nltk_data/
+backend/experiment_logs/ 
+backend/service_account.json
+backend/credentials.json 
+backend/session_state/
+backend/static/generated/
+
+# Node / Frontend specific
+node_modules/ # General node_modules, will cover frontend/node_modules too
+frontend/node_modules/ # Explicitly, good for clarity
+frontend/build/
+frontend/dist/ # Common for Vite/other bundlers
+frontend/.env # For frontend-specific environment variables
+
+# macOS
+.DS_Store
+
+# VSCode settings (optional, some teams commit this for consistency)
+.vscode/
+
+# Log files
+*.log
+logs/
+
+# IDE specific (examples)
+.idea/ # For JetBrains IDEs
+*.suo
+*.user
+backend/session_state/
+
+.env.local
+
+*.bfg-report/
+kagami.git/
+
+/backend/local_static_data/
