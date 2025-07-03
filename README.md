@@ -1,5 +1,5 @@
 # Kagami: A Research Platform for Multimodal Human-AI Interaction
-
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.15801082.svg)](https://doi.org/10.5281/zenodo.15801082)
 [![React Version](https://img.shields.io/badge/react-18.3-61DAFB.svg)](https://reactjs.org/)
 [![Python Version](https://img.shields.io/badge/python-3.12-3776AB.svg)](https://www.python.org/)
 [![Frameworks](https://img.shields.io/badge/Frameworks-FastAPI%20%7C%20TailwindCSS-blue.svg)](https://fastapi.tiangolo.com/)
@@ -132,3 +132,10 @@ To test the full experimental flow, append URL parameters to the frontend URL:
 
 ## 5. License
 This project is licensed under the MIT License. See the `LICENSE` file for details.
+
+## 📂 Related Repositories
+
+- **🧪 Kagami Data Analysis & De-identified Data Repository**  
+  Brandt, T.J. (2025). *Kagami Study – Analysis Repository* (v1.0-prereg).  
+  DOI: [10.5281/zenodo.15800990](https://doi.org/10.5281/zenodo.15800990)  
+  → Contains preprocessed survey/chat data and full confirmatory pipeline.
