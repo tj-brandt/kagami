@@ -4,7 +4,7 @@
 [![Python Version](https://img.shields.io/badge/python-3.12-3776AB.svg)](https://www.python.org/)
 [![Frameworks](https://img.shields.io/badge/Frameworks-FastAPI%20%7C%20TailwindCSS-blue.svg)](https://fastapi.tiangolo.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Status: Thesis In Progress](https://img.shields.io/badge/status-thesis_in_progress-green.svg)](https://github.com/tj-brandt/kagami)
+[![Status: Thesis Defended!](https://img.shields.io/badge/status-thesis_defended!-green.svg)](https://github.com/tj-brandt/kagami)
 
 **Kagami (鏡)**, the Japanese word for "mirror," is a full-stack web application built from the ground up as a research instrument for a Master's thesis. It is a sophisticated experimental platform designed to empirically investigate how multimodal personalization—specifically **user-controlled avatars** and **adaptive language style**—influences a user's relational perceptions of a companion chatbot.
 
