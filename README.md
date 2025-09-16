@@ -137,4 +137,5 @@ This project is licensed under the MIT License. See the `LICENSE` file for detai
 
 - **🧪 Kagami Data Analysis & De-identified Data Repository**  
   TJ Brandt. (2025). tj-brandt/kagami-analysis: 2.0 (v2.0). Zenodo. https://doi.org/10.5281/zenodo.17027204
-  → Contains preprocessed survey/chat data and full confirmatory pipeline.
+  
+  Contains preprocessed survey/chat data and full confirmatory pipeline.
