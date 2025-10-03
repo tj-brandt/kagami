@@ -2,6 +2,7 @@
 
 [![Backend CI](https://github.com/tj-brandt/kagami/actions/workflows/ci.yml/badge.svg)](https://github.com/tj-brandt/kagami/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.17260926.svg)](https://doi.org/10.5281/zenodo.17260926)
 
 **Kagami (鏡)** is a full-stack, open-source research platform for running controlled studies of conversational agents. It helps investigate how **avatar personalization** and **language-style matching (LSM)** affect user experience. The system includes a React frontend, a FastAPI backend, and a lightweight test suite.
 
