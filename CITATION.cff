@@ -2,7 +2,7 @@ cff-version: 1.2.0
 message: "If you use the Kagami platform, please cite this record."
 title: "Kagami: A Research Platform for Multimodal Human-AI Interaction"
 version: 2.0
-doi: 10.5281/zenodo.15801081
+doi: 10.5281/zenodo.17260926
 date-released: 2025-07-03
 authors:
   - family-names: Brandt
