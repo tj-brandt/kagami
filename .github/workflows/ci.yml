@@ -1,0 +1,53 @@
+# .github/workflows/ci.yml
+name: Backend CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+
+    defaults:
+      run:
+        working-directory: ./backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - id: setup-python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - uses: snok/install-poetry@v1
+        with:
+          version: 1.8.3
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - id: cached-poetry-dependencies
+        uses: actions/cache@v4
+        with:
+          path: backend/.venv
+          key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
+
+      - name: Install dependencies
+        run: poetry install --no-interaction
+
+      - name: Install SpaCy Model for Tests
+        run: poetry run python -m spacy download en_core_web_sm
+
+      - name: Run tests
+        env:
+          KAGAMI_MOCK: "1"
+          KAGAMI_SKIP_WARMUP: "1"
+          OPENAI_API_KEY: "test-key"
+          GOOGLE_DRIVE_FOLDER_ID: "test-id"
+        run: poetry run pytest

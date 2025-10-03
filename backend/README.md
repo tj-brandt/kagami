@@ -1,0 +1,1 @@
+This directory contains the Python FastAPI server for the Kagami research platform.

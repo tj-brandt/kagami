@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pkl
+*.pt
+*.zip
+*.tar
+*.whl
+*.egg-info/
+.env
+venv/
+.env.local
+node_modules/
+frontend/
+local_static_data/
+

@@ -1,0 +1,18 @@
+cff-version: 1.2.0
+message: "If you use the Kagami platform, please cite this record."
+title: "Kagami: A Research Platform for Multimodal Human-AI Interaction"
+version: 2.0
+doi: 10.5281/zenodo.15801081
+date-released: 2025-07-03
+authors:
+  - family-names: Brandt
+    given-names: T. J.
+    orcid: https://orcid.org/0009-0000-8294-6235 
+repository-code: https://github.com/tj-brandt/kagami
+license: MIT
+keywords:
+  - chatbot
+  - avatar generation
+  - language style matching
+  - human-AI interaction
+  - experimental platform

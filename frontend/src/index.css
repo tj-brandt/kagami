@@ -1,0 +1,51 @@
+/* src/index.css */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* Light Mode (default) */
+  :root {
+    /* surfaces */
+    --background:        45 33% 98%;   /* #FAF9F6 */
+    --card:               0  0%100%;   /* #FFFFFF */
+    /* text */
+    --foreground:       240  6% 10%;   /* #1C1C1C */
+    --card-foreground:  240  6% 10%;
+    /* accents */
+    --primary:          240  5% 26%;   /* #3D404A */
+    --primary-foreground: 0 0% 98%;    /* #FAFAFA */
+    --accent:            16 78% 46%;   /* #E86429 */
+    --accent-foreground:  0  0%100%;   /* #FFFFFF */
+    /* borders */
+    --border:            45 20% 86%;   /* #E5E3DC */
+  }
+
+  /* ---------- Dark mode ---------- */
+  .dark {
+    --background:       240  5%  8%;   /* #141414 */
+    --card:             240  5% 12%;   /* #1E1E1E */
+    --foreground:       210 13% 90%;   /* #E5E5E5 */
+    --card-foreground:  210 13% 90%;
+    --primary:            0  0% 98%;   /* #FAFAFA */
+    --primary-foreground:240  6% 10%;  /* #1C1C1C */
+    --accent:            16 80% 58%;   /* #F37C3B */
+    --accent-foreground:240  6% 10%;
+    --border:           240  4% 18%;   /* #2C2C2C */
+  }
+}
+
+@layer base {
+  body {
+    @apply bg-background text-foreground;
+    font-family: theme('fontFamily.sans');
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+.animate-shimmer {
+  animation: shimmer 1.5s infinite linear;
+  background: linear-gradient(to right, transparent 0%, rgba(255, 255, 255, 0.1) 50%, transparent 100%);
+  background-size: 200% 100%;
+}
