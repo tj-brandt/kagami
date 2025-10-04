@@ -3,7 +3,7 @@ title: 'Kagami: A Research Platform for Studying Multimodal Personalization in C
 tags: [python, react, conversational-ai, hci, psycholinguistics, experimental-software]
 authors:
   - name: T. James Brandt
-    orcid: 0000-0000-8294-6235 
+    orcid: 0009-0000-8294-6235
     affiliation: 1
 affiliations:
   - name: University of Minnesota
